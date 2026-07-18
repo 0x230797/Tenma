@@ -57,6 +57,14 @@ Valores importantes:
 - `maxpages`: número de páginas de tablero a mantener.
 - `allowedtypes`: tipos MIME permitidos para las imágenes.
 - `maximagesize`: tamaño máximo de imagen en bytes.
+- `trustedproxies`: lista de IPs/rangos CIDR de proxies inversos de confianza (por ejemplo, tu balanceador o Cloudflare). Solo si la petición llega desde una de estas direcciones se confía en cabeceras como `CF-Connecting-IP` o `X-Forwarded-For` para determinar la IP real y si la conexión es HTTPS. Vacío por defecto: cualquier cabecera de este tipo enviada directamente por el cliente se ignora, para que nadie pueda falsificar su IP y evadir un baneo.
+
+### Seguridad
+
+- **Cambia la contraseña de administrador** cuanto antes: genera un nuevo hash con `password_hash('tu-contraseña', PASSWORD_DEFAULT)` en PHP y sustituye el valor de `adminpasswordhash`. Mientras se detecte la contraseña por defecto (`admin123`), el panel de administración muestra un aviso.
+- El panel de administración incluye protección contra fuerza bruta (bloqueo temporal tras varios intentos fallidos) y un botón "Cerrar sesión" que revoca de inmediato todas las cookies de administrador emitidas.
+- Los hashes de IP usados para baneos incluyen un secreto local (`database/iphash.secret`) para que no puedan revertirse fácilmente si la base de datos se filtrara. También se guarda un secreto de sesión de administrador en `database/admin.secret`; ambos archivos se generan automáticamente y están protegidos por el `.htaccess` de `database/`. No los borres ni los compartas.
+- No expongas `trustedproxies` a menos que el sitio esté realmente detrás de un proxy de confianza, ya que confiar en cabeceras de IP arbitrarias permite falsificar la IP de origen.
 
 ### Rutas y archivos generados
 

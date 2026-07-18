@@ -91,6 +91,12 @@ $config = [
     'maximagesize'       => 3 * 1024 * 1024,
     'allowedtypes'       => ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
     'badstrings'         => [],
+    // IPs o rangos CIDR de proxies inversos de confianza (p.ej. tu balanceador o Cloudflare).
+    // Solo si la petición llega desde una de estas direcciones se confiará en cabeceras
+    // como CF-Connecting-IP o X-Forwarded-For para determinar la IP real del visitante.
+    // Vacío por defecto: cualquier cabecera de este tipo enviada directamente por el
+    // cliente sería ignorada, evitando que se pueda falsificar la IP para evadir baneos.
+    'trustedproxies'     => [],
 ];
 
 function siteBasePath(): string {
@@ -113,13 +119,123 @@ function threadUrl(int $num): string {
     return siteUrl('threads/' . $num . '/');
 }
 
+/**
+ * Indica si la petición actual se está sirviendo mediante HTTPS.
+ * Solo confía en cabeceras de proxy si la IP de origen figura como proxy de confianza.
+ */
+function isHttps(array $config): bool {
+    if (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') {
+        return true;
+    }
+    if ((int)($_SERVER['SERVER_PORT'] ?? 0) === 443) {
+        return true;
+    }
+    $remote = $_SERVER['REMOTE_ADDR'] ?? '';
+    if ($remote !== '' && isTrustedProxy($remote, $config) && ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') {
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Comprueba si una IP pertenece a un rango CIDR (IPv4 o IPv6).
+ */
+function ipMatchesCidr(string $ip, string $cidr): bool {
+    if (strpos($cidr, '/') === false) {
+        return $ip === $cidr;
+    }
+    [$subnet, $bits] = explode('/', $cidr, 2);
+    $bits = (int)$bits;
+    $ipBin     = @inet_pton($ip);
+    $subnetBin = @inet_pton($subnet);
+    if ($ipBin === false || $subnetBin === false || strlen($ipBin) !== strlen($subnetBin)) {
+        return false;
+    }
+    $bytes      = intdiv($bits, 8);
+    $remainder  = $bits % 8;
+    if ($bytes > 0 && substr($ipBin, 0, $bytes) !== substr($subnetBin, 0, $bytes)) {
+        return false;
+    }
+    if ($remainder > 0) {
+        $mask = ~(0xFF >> $remainder) & 0xFF;
+        if ((ord($ipBin[$bytes]) & $mask) !== (ord($subnetBin[$bytes]) & $mask)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Indica si una IP de origen está en la lista de proxies inversos de confianza.
+ */
+function isTrustedProxy(string $remoteAddr, array $config): bool {
+    foreach ($config['trustedproxies'] ?? [] as $cidr) {
+        if (ipMatchesCidr($remoteAddr, $cidr)) return true;
+    }
+    return false;
+}
+
+/**
+ * Determina la IP real del visitante. Solo se confía en cabeceras como
+ * CF-Connecting-IP o X-Forwarded-For cuando la petición llega desde un
+ * proxy declarado en 'trustedproxies'; en caso contrario se usa REMOTE_ADDR
+ * para impedir que un cliente falsifique su IP y evada baneos.
+ */
+function clientIp(array $config): string {
+    $remote = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    if (!empty($config['trustedproxies']) && isTrustedProxy($remote, $config)) {
+        foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR'] as $header) {
+            if (!empty($_SERVER[$header])) {
+                $candidate = trim(explode(',', $_SERVER[$header])[0]);
+                if (filter_var($candidate, FILTER_VALIDATE_IP)) {
+                    return $candidate;
+                }
+            }
+        }
+    }
+    return $remote;
+}
+
+/**
+ * Devuelve (creando si es necesario) un secreto local usado como "pepper" para
+ * derivar el hash de IP. Sin este secreto, un hash SHA1 de una IP es
+ * trivialmente reversible (el espacio de IPs es pequeño), por lo que si la
+ * base de datos se filtrara se podría desanonimizar a los usuarios.
+ */
+function ipHashSecret(array $config): string {
+    static $secret = null;
+    if ($secret !== null) return $secret;
+
+    $path = rtrim($config['databasefolder'], '/') . '/iphash.secret';
+    if (!is_dir(dirname($path))) {
+        mkdir(dirname($path), 0755, true);
+    }
+    if (!file_exists($path)) {
+        file_put_contents($path, bin2hex(random_bytes(32)));
+        @chmod($path, 0600);
+    }
+    $secret = (string)file_get_contents($path);
+    return $secret;
+}
+
 // ===== INICIALIZACIÓN =====
 ini_set('default_charset', 'UTF-8');
 
-if (session_status() !== PHP_SESSION_ACTIVE) {
+function startAdminSession(array $config): void {
+    if (session_status() === PHP_SESSION_ACTIVE) return;
     session_name('tenma_admin');
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path'     => '/',
+        'domain'   => '',
+        'secure'   => isHttps($config),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
     session_start();
 }
+
+startAdminSession($config);
 
 if (version_compare(PHP_VERSION, '7.4.0', '<')) {
     die('Tenma requiere PHP 7.4 o superior. Estás usando PHP ' . PHP_VERSION);
@@ -223,6 +339,7 @@ ErrorDocument 404 {$errorDocumentUrl}
     Header set X-Content-Type-Options "nosniff"
     Header set X-Frame-Options "SAMEORIGIN"
     Header set Referrer-Policy "same-origin"
+    Header set Content-Security-Policy "default-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 </IfModule>
 HTACCESS,
 ];
@@ -246,8 +363,11 @@ foreach ($htaccessFiles as $path => $content) {
     }
 }
 
-$ip       = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'];
-$hashedip = substr(sha1($ip), 0, 16);
+$ip       = clientIp($config);
+$hashedip = substr(hash_hmac('sha256', $ip, ipHashSecret($config)), 0, 16);
+// Hash heredado de versiones anteriores (SHA1 sin pepper), solo para no perder
+// los baneos ya existentes al actualizar. Los baneos nuevos usan $hashedip.
+$legacyhashedip = substr(sha1($ip), 0, 16);
 
 // ===== CAPA DE BASE DE DATOS =====
 /**
@@ -283,6 +403,11 @@ function getPDO(array $config): PDO {
         num    INTEGER NOT NULL,
         reason TEXT    NOT NULL DEFAULT '',
         time   TEXT    NOT NULL
+    )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS login_attempts (
+        hash        TEXT    PRIMARY KEY,
+        attempts    INTEGER NOT NULL DEFAULT 0,
+        lastattempt INTEGER NOT NULL DEFAULT 0
     )");
     return $pdo;
 }
@@ -415,8 +540,61 @@ function threadExists(array $config, int $num): bool {
 
 /**
  * Comprueba si una IP o hash de IP está baneado.
+ * Acepta opcionalmente un hash heredado (versiones anteriores) para no
+ * perder baneos ya existentes tras cambiar el algoritmo de hash.
  */
-function isBanned(array $config, string $hash): bool {
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_LOCKOUT_SECS = 900; // 15 minutos
+
+/**
+ * Lanza un error si el hash de IP indicado ha superado el número máximo de
+ * intentos fallidos de acceso al panel de administración en la ventana de
+ * tiempo configurada, mitigando ataques de fuerza bruta contra la contraseña.
+ */
+function checkLoginRateLimit(array $config, string $hash): void {
+    $stmt = getPDO($config)->prepare('SELECT attempts, lastattempt FROM login_attempts WHERE hash = :hash');
+    $stmt->execute(['hash' => $hash]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row && (int)$row['attempts'] >= LOGIN_MAX_ATTEMPTS && (time() - (int)$row['lastattempt']) < LOGIN_LOCKOUT_SECS) {
+        $wait = (int)ceil((LOGIN_LOCKOUT_SECS - (time() - (int)$row['lastattempt'])) / 60);
+        showError($config, 'Demasiados intentos fallidos. Espera unos ' . max(1, $wait) . ' minuto(s) antes de volver a intentarlo.');
+    }
+}
+
+/**
+ * Registra un intento fallido de acceso al panel de administración.
+ */
+function registerFailedLogin(array $config, string $hash): void {
+    $pdo  = getPDO($config);
+    $stmt = $pdo->prepare('SELECT attempts, lastattempt FROM login_attempts WHERE hash = :hash');
+    $stmt->execute(['hash' => $hash]);
+    $row  = $stmt->fetch(PDO::FETCH_ASSOC);
+    $now  = time();
+
+    if (!$row) {
+        $pdo->prepare('INSERT INTO login_attempts (hash, attempts, lastattempt) VALUES (:hash, 1, :now)')
+            ->execute(['hash' => $hash, 'now' => $now]);
+        return;
+    }
+
+    $attempts = ($now - (int)$row['lastattempt']) > LOGIN_LOCKOUT_SECS ? 1 : (int)$row['attempts'] + 1;
+    $pdo->prepare('UPDATE login_attempts SET attempts = :attempts, lastattempt = :now WHERE hash = :hash')
+        ->execute(['attempts' => $attempts, 'now' => $now, 'hash' => $hash]);
+}
+
+/**
+ * Limpia el contador de intentos fallidos tras un inicio de sesión correcto.
+ */
+function clearLoginAttempts(array $config, string $hash): void {
+    getPDO($config)->prepare('DELETE FROM login_attempts WHERE hash = :hash')->execute(['hash' => $hash]);
+}
+
+function isBanned(array $config, string $hash, string $legacyHash = ''): bool {
+    if ($legacyHash !== '') {
+        $stmt = getPDO($config)->prepare('SELECT 1 FROM bans WHERE hash = :hash OR hash = :legacy');
+        $stmt->execute(['hash' => $hash, 'legacy' => $legacyHash]);
+        return (bool)$stmt->fetchColumn();
+    }
     $stmt = getPDO($config)->prepare('SELECT 1 FROM bans WHERE hash = :hash');
     $stmt->execute(['hash' => $hash]);
     return (bool)$stmt->fetchColumn();
@@ -459,17 +637,45 @@ function deleteReportsForPost(array $config, int $num): void {
 }
 
 /**
+ * Secreto rotable usado para firmar el token de sesión de administración.
+ * Regenerarlo (rotateAdminSessionSecret) invalida de inmediato todas las
+ * cookies de administrador existentes, incluso sin cambiar la contraseña.
+ */
+function adminSessionSecret(array $config): string {
+    static $secret = null;
+    if ($secret !== null) return $secret;
+
+    $path = rtrim($config['databasefolder'], '/') . '/admin.secret';
+    if (!is_dir(dirname($path))) {
+        mkdir(dirname($path), 0755, true);
+    }
+    if (!file_exists($path)) {
+        file_put_contents($path, bin2hex(random_bytes(32)));
+        @chmod($path, 0600);
+    }
+    $secret = (string)file_get_contents($path);
+    return $secret;
+}
+
+/**
+ * Sobrescribe el secreto de sesión de administración, invalidando todas las
+ * cookies de administrador emitidas anteriormente ("cerrar todas las sesiones").
+ */
+function rotateAdminSessionSecret(array $config): void {
+    $path = rtrim($config['databasefolder'], '/') . '/admin.secret';
+    file_put_contents($path, bin2hex(random_bytes(32)));
+    @chmod($path, 0600);
+}
+
+/**
  * Genera un token firmado para validar la sesión de administración.
  */
 function adminSessionToken(array $config): string {
-    return hash_hmac('sha256', $config['adminusername'], $config['adminpasswordhash']);
+    return hash_hmac('sha256', $config['adminusername'] . '|' . adminSessionSecret($config), $config['adminpasswordhash']);
 }
 
 function generateAdminCsrfToken(array $config): string {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_name('tenma_admin');
-        session_start();
-    }
+    startAdminSession($config);
 
     if (empty($_SESSION['tenma_admin_csrf'])) {
         $_SESSION['tenma_admin_csrf'] = bin2hex(random_bytes(32));
@@ -479,15 +685,12 @@ function generateAdminCsrfToken(array $config): string {
 }
 
 function verifyAdminCsrfToken(array $config, string $token): bool {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_name('tenma_admin');
-        session_start();
-    }
+    startAdminSession($config);
 
     return hash_equals($_SESSION['tenma_admin_csrf'] ?? '', $token);
 }
 
-if (isBanned($config, $hashedip)) {
+if (isBanned($config, $hashedip, $legacyhashedip)) {
     showError($config, 'Estás baneado de este BBS.');
 }
 
@@ -1265,20 +1468,24 @@ if ($mode === 'manage') {
             showError($config, 'La sesión de administración ha caducado. Recarga la página e inténtalo de nuevo.');
         }
 
+        checkLoginRateLimit($config, $hashedip);
+
         $validuser = hash_equals($config['adminusername'], trim($_POST['manageusername'] ?? ''));
         $validpass = password_verify((string)($_POST['managepassword'] ?? ''), $config['adminpasswordhash']);
         if ($validuser && $validpass) {
+            clearLoginAttempts($config, $hashedip);
             session_regenerate_id(true);
             setcookie($config['managecookie'], $sessiontoken, [
                 'expires'  => 0,
                 'path'     => '/',
                 'domain'   => '',
-                'secure'   => false,
+                'secure'   => isHttps($config),
                 'httponly' => true,
                 'samesite' => 'Lax',
             ]);
             $canmanage = true;
         } else {
+            registerFailedLogin($config, $hashedip);
             showError($config, 'Usuario o contraseña incorrectos.');
         }
     } elseif (isset($_COOKIE[$config['managecookie']]) && hash_equals($sessiontoken, $_COOKIE[$config['managecookie']])) {
@@ -1317,6 +1524,22 @@ if ($mode === 'manage') {
 
         $page = (int)($_POST['page'] ?? 0);
 
+        if (isset($_POST['logout'])) {
+            // Revoca de inmediato TODAS las cookies de administrador emitidas
+            // (incluida esta), útil si una cookie se filtró o para forzar el
+            // cierre de sesión sin depender solo de borrar la cookie local.
+            rotateAdminSessionSecret($config);
+            setcookie($config['managecookie'], '', [
+                'expires'  => time() - 3600,
+                'path'     => '/',
+                'domain'   => '',
+                'secure'   => isHttps($config),
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
+            header('Location: ' . siteUrl($config['tenmafile']) . '?mode=manage');
+            exit;
+        }
         if (isset($_POST['togglelock'])) {
             file_exists($config['lockfile']) ? unlink($config['lockfile']) : file_put_contents($config['lockfile'], 'locked');
             header('Location: ' . $config['tenmafile'] . '?mode=manage');
@@ -1357,8 +1580,14 @@ if ($mode === 'manage') {
     $title = ($config['title'] ?: 'Tenma') . ' - Admin';
 
     $content = '<center><h1 style="margin-bottom:5px;">' . htmlspecialchars($config['title'] ?: 'Tenma') . ' - Panel de administración</h1></center>
-<hr>
-<div class="admin-toolbar">
+<hr>';
+
+    if (password_verify('admin123', $config['adminpasswordhash'])) {
+        $content .= '<div style="background:#fff3cd;border:1px solid #e0a800;color:#7a5b00;padding:8px 12px;margin-bottom:10px;text-align:center;">Estás usando la contraseña de administrador por defecto. Cámbiala en <code>$config[\'adminpasswordhash\']</code> generando un nuevo hash con <code>password_hash()</code>.
+</div>';
+    }
+
+    $content .= '<div class="admin-toolbar">
 <form method="POST" action="?mode=manage" style="display:inline;">
 <input type="hidden" name="csrf_token" value="' . $csrfToken . '">
 <button type="submit" name="togglelock" value="1" style="padding:.15em .3em">' . (file_exists($config['lockfile']) ? 'Desbloquear publicaciones' : 'Bloquear publicaciones') . '</button>
@@ -1367,6 +1596,11 @@ if ($mode === 'manage') {
 <form method="POST" action="?mode=manage" style="display:inline;">
 <input type="hidden" name="csrf_token" value="' . $csrfToken . '">
 <button type="submit" name="rebuild" value="1" style="padding:.15em .3em">Regenerar HTML</button>
+</form>
+&nbsp;
+<form method="POST" action="?mode=manage" style="display:inline;" onsubmit="return confirm(\'Esto cerrará todas las sesiones de administrador activas. ¿Continuar?\');">
+<input type="hidden" name="csrf_token" value="' . $csrfToken . '">
+<button type="submit" name="logout" value="1" style="padding:.15em .3em">Cerrar sesión</button>
 </form>
 </div>';
 
