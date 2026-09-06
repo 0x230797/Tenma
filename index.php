@@ -10,9 +10,9 @@ $config = [
     'linkcolor'          => '#0000EE',
     'linkhover'          => '#FF0000',
     'fonts'              => 'arial, helvetica, sans-serif',
-    'formsidecolor'      => '#ea8',
+    'formsidecolor'      => '#EA8',
     'border'             => '#800',
-    'postbackground'     => '#F0E0D6',
+    'postbackground'     => '#EAD6CA',
     'posternamecolor'    => '#117743',
     'postsubjectcolor'   => '#CC1105',
     'errortextcolor'     => '#B00020',
@@ -768,7 +768,7 @@ function formatComment(string $text, array $allposts): string {
         foreach ($allposts as $p) {
             if ((int)$p['num'] === $num) {
                 $thread = $p['parent'] > 0 ? $p['parent'] : $p['num'];
-                return '<a href="' . threadUrl($thread) . '#p' . $num . '" class="quotelink">&gt;&gt;' . $num . '</a>';
+                    return '<a href="' . threadUrl($thread) . '#p' . $num . '" class="quotelink">&gt;&gt;' . $num . '</a>';
             }
         }
         return '<span style="color:red;">&gt;&gt;' . $num . '</span>';
@@ -849,6 +849,7 @@ function renderPage(string $title, string $content, array $config, array $nav = 
 
     return <<<HTML
     <!DOCTYPE html>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <html lang="es">
     <head>
     <title>$title</title>
@@ -856,19 +857,50 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     <link rel="icon" type="image/svg+xml" href="$faviconUrl">
     <style>
     * { margin: 0; padding: 0; box-sizing: border-box; overflow-wrap: break-word; word-wrap: break-word }
-    body { font-family: {$config['fonts']}; color: {$config['textcolor']}; padding: 10px; background: linear-gradient(to bottom, {$config['gradient']} 0, {$config['background']} 190px) no-repeat; background-color: {$config['background']} }
+    body { font-family: {$config['fonts']}; color: {$config['textcolor']}; padding: 10px; background: linear-gradient(to bottom, {$config['gradient']} 0, {$config['background']} 190px) no-repeat; background-color: {$config['background']}; overflow-x: hidden }
     a { text-decoration: none; color: {$config['linkcolor']} }
     a:hover { color: {$config['linkhover']} }
-    .container { margin: 0 auto }
+    .container { width: 100%; max-width: 800px; margin: 0 auto }
+    .board-column { width: 100%; }
     .nav { text-align: center; margin: .3em 0 }
     hr { border: none; opacity: .3; border-top: 1px solid {$config['textcolor']} }
     ul { list-style-type: none; margin: 1em; padding: 0 }
     input[type=text], input[type=password], textarea { font-family:sans-serif; padding:.2em; border: 1px solid {$config['border']} }
     .fileinfo  { font-size: 10pt; margin-bottom: 3px }
+    .mobile { display: none }
+    .post-media { float: left; margin: 0 10px 4px 0 }
+    .post-media img { display: block; height: auto }
     .error-message { color: {$config['errortextcolor']}; font-weight: bold }
-    .postheader { font-size: 10.5pt }
+    .postheader { font-size: 10.5pt; display: contents }
     .postheader .subject { color: {$config['postsubjectcolor']}; font-weight: bold }
     .postactions { font-size: 10.5pt }
+    .post-checkbox { margin: 0 5px 0 0; vertical-align: middle }
+    .op-post { width: 100%; padding: 5px 0; overflow: hidden }
+    .reply-post { display: inline-block; vertical-align: top; padding: 5px; margin: 0 0 4px 0; border: 1px solid #d9bfb7; background-color: {$config['postbackground']}; overflow: hidden; max-width: 100% }
+    .post-content { margin-top: 4px }
+    .mobile-post-info { line-height: 1.25; }
+    .mobile-post-info .post-menu { float: left; margin: 0 5px 0 0; }
+    .mobile-post-info .post-menu summary::before { content: '...'; font-weight: bold; }
+    .mobile-post-info .post-menu[open] summary::before { content: '...'; }
+    .mobile-post-info .name-block { display: inline-block; vertical-align: top; }
+    .mobile-post-info .mobile-subject { color: {$config['postsubjectcolor']}; font-weight: bold; }
+    .mobile-post-info .mobile-date { float: right; text-align: right; }
+    .mobile-post-info .mobile-number a { white-space: nowrap; }
+    .mobile-file-info { display: none; }
+    .mobile-post-link { display: none; }
+    .post-menu { display: inline-block; position: relative; margin-left: 4px; font-size: 10pt }
+    .post-menu summary { display: inline-block; width: 16px; cursor: pointer; color: {$config['linkcolor']}; list-style: none }
+    .post-menu summary::-webkit-details-marker { display: none }
+    .post-menu summary::before { content: '▶'; font-size: 11px }
+    .post-menu[open] summary::before { content: '▼'; }
+    .post-menu summary:hover { color: {$config['linkhover']}; }
+    .post-menu-content { position: absolute; z-index: 10; top: 1.35em; left: 0; min-width: 115px; padding: 0; background: #f0e0d6; border: 1px solid #c9a79d; box-shadow: 1px 1px 2px #999; text-align: left }
+    .post-menu-content a, .post-menu-content button, .post-menu-label { display: block; width: 100%; padding: 3px 6px; border: 0; background: transparent; color: {$config['textcolor']}; font: inherit; text-align: left; white-space: nowrap; cursor: pointer }
+    .post-menu-content a:hover, .post-menu-content button:hover, .post-menu-label:hover { background: #e4c8bd; color: {$config['linkhover']}; }
+    .post-menu-submenu { display: none; position: absolute; top: 44px; left: 100%; min-width: 87px; padding: 0; background: #f0e0d6; border: 1px solid #c9a79d; box-shadow: 1px 1px 2px #999; }
+    .post-menu-submenu.flip { left: auto; right: 100%; }
+    .post-menu-label:hover .post-menu-submenu, .post-menu-label:focus-within .post-menu-submenu { display: block; }
+    .post-menu-submenu a { padding: 3px 6px; }
     .omitted { padding: 5px 0; font-size: 10pt }
     .postnum { cursor: pointer; color: {$config['linkcolor']} }
     .postnum:hover { text-decoration: underline; color: {$config['linkhover']} }
@@ -888,10 +920,39 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     .admin-table th { background: #FCA; color: #800; padding: 5px }
     .admin-table td { padding: 5px }
     .admin-toolbar { text-align: center; margin: 10px 0 }
+    @media (max-width: 600px) {
+        body { padding: 5px; font-size: 10px }
+        .container { max-width: none; margin: 0 }
+        .board-column { }
+        .postheader { display: block; line-height: 1.35 }
+        .desktop { display: none !important; }
+        .mobile { display: inline; }
+        .post-checkbox { margin-left: 0 }
+        .op-post { padding: 0; margin: 0 0 8px; background: {$config['postbackground']}; }
+        .reply-post { display: block; width: fit-content; max-width: 100%; padding: 0; margin: 0 0 6px; background: {$config['postbackground']}; }
+        .mobile-post-info { display: block; min-height: 42px; padding: 7px 6px; background: {$config['postbackground']}; border-bottom: 1px solid #D9BFB7; }
+        .mobile-post-info .mobile-date { max-width: 58%; }
+        .mobile-post-info .mobile-number { display: block; }
+        .mobile-file-info { display: block; clear: both; padding: 7px 6px 4px; color: #666; }
+        .post-media { float: none; max-width: 100%; margin: 0; padding: 7px 6px 0; }
+        .post-media img { max-width: 100% !important; max-height: 250px; }
+        .post-media .desktop-fileinfo { display: none; }
+        .post-media .mobile-file-info { display: block; }
+        .mobile-post-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 6px; border-top: 1px solid #c5c9df; background: #d9dcef; }
+        .mobile-post-link .button { padding: 4px 9px; border: 1px solid #b8bdd5; border-radius: 3px; background: #eef0fa; }
+        .mobile-post-content { display: block; padding: 7px 6px; }
+        .fileinfo { font-size: 9pt; line-height: 1.25 }
+        .post-content { margin-top: 3px; line-height: 1.25 }
+        .post-menu-content { position: fixed; top: auto; left: 4px; right: auto }
+        .post-menu-submenu { position: static; margin-left: 8px; box-shadow: none }
+        .post-menu-submenu.flip { left: auto; right: auto }
+        table { max-width: 100%; overflow: hidden }
+        input[type=text], input[type=password], textarea { max-width: 100%; }
+    }
     </style>
     </head>
     <body>
-    <div class="container" style="max-width:800px">
+    <div class="container">
     $content
     <hr>
     $navhtml
@@ -964,6 +1025,52 @@ function renderPage(string $title, string $content, array $config, array $nav = 
             nodes[i].textContent = text;
         }
     }
+
+    function tenmaHiddenPosts() {
+        try {
+            var hidden = JSON.parse(localStorage.getItem('tenma-hidden-posts') || '[]');
+            return Array.isArray(hidden) ? hidden : [];
+        } catch (error) {
+            return [];
+        }
+    }
+
+    function tenmaApplyHiddenPosts() {
+        var hidden = tenmaHiddenPosts();
+        var nodes = document.querySelectorAll('[data-post-id]');
+        for (var i = 0; i < nodes.length; i++) {
+            if (hidden.indexOf(nodes[i].getAttribute('data-post-id')) !== -1) {
+                nodes[i].style.display = 'none';
+            }
+        }
+    }
+
+    function tenmaHidePost(postId) {
+        var hidden = tenmaHiddenPosts();
+        postId = String(postId);
+        if (hidden.indexOf(postId) === -1) hidden.push(postId);
+        try {
+            localStorage.setItem('tenma-hidden-posts', JSON.stringify(hidden));
+        } catch (error) {}
+        tenmaApplyHiddenPosts();
+    }
+
+    document.querySelectorAll('.post-menu-label').forEach(function(label) {
+        label.addEventListener('mouseenter', function() {
+            var submenu = label.querySelector('.post-menu-submenu');
+            if (!submenu) return;
+            submenu.classList.remove('flip');
+            window.setTimeout(function() {
+                var labelBox = label.getBoundingClientRect();
+                var submenuWidth = submenu.getBoundingClientRect().width;
+                if (labelBox.right + submenuWidth > window.innerWidth) {
+                    submenu.classList.add('flip');
+                }
+            }, 0);
+        });
+    });
+
+    tenmaApplyHiddenPosts();
     tenmaUpdateTimes();
     setInterval(tenmaUpdateTimes, 30000);
     </script>
@@ -1000,33 +1107,66 @@ function renderImageBlock(array $post, bool $large, array $config): string {
     $dims     = @getimagesize($diskPath);
     $dimstext = $dims ? $dims[0] . 'x' . $dims[1] : '';
     $maxcss   = $large ? 'max-width:250px;max-height:250px;' : 'max-width:150px;max-height:150px;';
-    $fileinfo = '<div class="fileinfo">Archivo: <a href="' . $path . '" target="_blank">'
+    $extensionLabel = strtoupper(pathinfo($post['image'], PATHINFO_EXTENSION));
+    $fileinfo = '<div class="fileinfo desktop-fileinfo">Archivo: <a href="' . $path . '" target="_blank">'
               . htmlspecialchars($post['image']) . '</a>'
               . ' (' . $size . ($dimstext !== '' ? ', ' . $dimstext : '') . ')</div>';
-    $img      = '<div style="float:left;margin-right:10px;">'
+    $img      = '<div class="post-media">'
               . '<a href="' . $path . '" target="_blank">'
               . '<img src="' . $path . '" style="' . $maxcss . '" alt="imagen">'
+              . '<span class="mobile-file-info mobile">' . $size . ' ' . $extensionLabel . '</span>'
               . '</a></div>';
     return $fileinfo . $img;
 }
 
+function renderMobilePostInfo(array $post, int $threadnum, bool $isop, array $config): string {
+    $num       = (int)$post['num'];
+    $name      = htmlspecialchars($post['name']);
+    $subject   = htmlspecialchars($post['subject'] ?? '');
+    $subject   = $isop && $subject !== '' ? '<br><span class="mobile-subject">' . $subject . '</span>' : '';
+    $threadUrl = threadUrl($threadnum);
+    $postMenu  = renderPostMenu($post, $threadnum, $config);
+
+    return '<div class="mobile mobile-post-info">'
+         . $postMenu
+         . '<span class="name-block"><span style="color:' . $config['posternamecolor'] . ';font-weight:bold;">' . $name . '</span>' . $subject . '</span>'
+         . '<span class="mobile-date">' . htmlspecialchars($post['time']) . '<span class="mobile-number">'
+         . '<a href="' . $threadUrl . '#p' . $num . '">No.</a><a href="' . $threadUrl . '#q' . $num . '" onclick="quotePost(' . $num . '); return false;">' . $num . '</a>'
+         . '</span></span></div>';
+}
+
 /**
- * Crea el enlace de reporte para una publicación concreta.
+ * Crea el menú de acciones para una publicación concreta.
  */
-function renderReportLink(int $num, array $config): string {
-    return ' [<a href="' . $config['tenmafile'] . '?mode=report&num=' . $num . '">Reportar</a>]';
+function renderPostMenu(array $post, int $threadnum, array $config): string {
+    $num       = (int)$post['num'];
+    $reportUrl = siteUrl($config['tenmafile']) . '?mode=report&num=' . $num;
+    $menu      = '<details class="post-menu"><summary title="Más acciones"></summary><div class="post-menu-content">'
+               . '<a href="' . htmlspecialchars($reportUrl, ENT_QUOTES, 'UTF-8') . '">Reportar</a>'
+               . '<button type="button" onclick="tenmaHidePost(' . $num . ')">Ocultar</button>';
+
+    if (!empty($post['image']) && file_exists($config['uploadfolder'] . $post['image'])) {
+        $imagePath = siteUrl($config['uploadfolder'] . $post['image']);
+         $menu .= '<div class="post-menu-label">Buscar imágen »<div class="post-menu-submenu">'
+             . '<a href="https://www.google.com/searchbyimage?image_url=' . rawurlencode($imagePath) . '" target="_blank" rel="noopener">Google</a>'
+             . '<a href="https://yandex.com/images/search?rpt=imageview&url=' . rawurlencode($imagePath) . '" target="_blank" rel="noopener">Yandex</a>'
+             . '<a href="https://saucenao.com/search.php?url=' . rawurlencode($imagePath) . '" target="_blank" rel="noopener">SauceNAO</a>'
+             . '</div></div>';
+    }
+
+    return ' ' . $menu . '</div></details>';
 }
 
 /**
  * Renderiza una publicación de tipo OP (post inicial de un hilo).
  */
 function renderOP(array $post, array $allposts, bool $isthread, bool $summarize, array $config): string {
-    $reportLink = renderReportLink((int)$post['num'], $config);
+    $postMenu = renderPostMenu($post, (int)$post['num'], $config);
 
     if ((int)$post['deleted'] > 0) {
-        return '<div id="p' . $post['num'] . '" style="padding:8px;margin-bottom:5px;background-color:' . $config['postbackground'] . ';">'
+        return '<div id="p' . $post['num'] . '" class="op-post" data-post-id="' . $post['num'] . '" style="background-color:' . $config['postbackground'] . ';">'
              . '<i>' . $config['deletionphrase'] . '</i>'
-             . '<span class="postactions">' . $reportLink . '</span>'
+             . '<span class="postactions">' . $postMenu . '</span>'
              . '</div>';
     }
 
@@ -1040,18 +1180,27 @@ function renderOP(array $post, array $allposts, bool $isthread, bool $summarize,
     }
     $comment   = formatComment($comment, $allposts);
     $imageHtml = renderImageBlock($post, true, $config);
+    $mobileInfo = renderMobilePostInfo($post, (int)$post['num'], true, $config);
     $replyLink = !$isthread
         ? ' [<a href="' . threadUrl((int)$post['num']) . '">Responder</a>]' : '';
-    return '<div id="p' . $post['num'] . '" style="padding:.5em 0;overflow:hidden;">'
+    $replyCount = count(array_filter($allposts, fn($p) => (int)$p['parent'] === (int)$post['num']));
+    $imageCount = count(array_filter($allposts, fn($p) => (int)$p['parent'] === (int)$post['num'] && !empty($p['image'])));
+    $mobileLink = !$isthread
+        ? '<div class="mobile mobile-post-link"><span class="info">' . $replyCount . ' respuestas / ' . $imageCount . ' imágenes</span><a class="button" href="' . threadUrl((int)$post['num']) . '">Ver hilo</a></div>'
+        : '';
+    return '<div id="p' . $post['num'] . '" class="op-post" data-post-id="' . $post['num'] . '">'
+         . $mobileInfo
          . $imageHtml
-         . '<div class="postheader">'
-         . ' ' . $subjHtml
+         . '<div class="postheader desktop">'
+         . ' <input class="post-checkbox" type="checkbox" aria-label="Seleccionar publicación">'
+         . $subjHtml
          . '<span style="color:' . $config['posternamecolor'] . ';"><b>' . $name . '</b></span> '
          . '<span>' . $post['time'] . '</span> '
          . '<span class="postnum" onclick="quotePost(' . $post['num'] . ')" title="Responder citando esta publicación">No.' . $post['num'] . '</span>'
-         . '<span class="postactions">' . $replyLink . $reportLink . '</span>'
+         . '<span class="postactions">' . $replyLink . $postMenu . '</span>'
          . '</div>'
-         . '<div style="margin-top:5px;">' . $comment . '<br clear="all"></div>'
+         . '<div class="post-content mobile-post-content">' . $comment . '<br clear="all"></div>'
+         . $mobileLink
          . '</div>';
 }
 
@@ -1059,7 +1208,7 @@ function renderOP(array $post, array $allposts, bool $isthread, bool $summarize,
  * Renderiza una respuesta de hilo con su contenido, imagen y acciones.
  */
 function renderReply(array $post, array $allposts, bool $summarize, array $config): string {
-    $reportLink = renderReportLink((int)$post['num'], $config);
+    $postMenu = renderPostMenu($post, (int)$post['parent'], $config);
 
     if ((int)$post['deleted'] > 0) {
         return '<div id="p' . $post['num'] . '" style="padding:6px;margin:0 0 4px 0;background-color:' . $config['postbackground'] . ';">'
@@ -1075,16 +1224,19 @@ function renderReply(array $post, array $allposts, bool $summarize, array $confi
     }
     $comment   = formatComment($comment, $allposts);
     $imageHtml = renderImageBlock($post, false, $config);
+    $mobileInfo = renderMobilePostInfo($post, (int)$post['parent'], false, $config);
 
-    return '<div id="p' . $post['num'] . '" style="display:inline-grid;padding:5px;margin:0 0 4px 0;border:1px solid #D9BFB7;background-color:' . $config['postbackground'] . ';overflow:hidden;max-width:100%;">'
+    return '<div id="p' . $post['num'] . '" class="reply-post" data-post-id="' . $post['num'] . '">'
+         . $mobileInfo
          . $imageHtml
-         . '<div class="postheader">'
-         . ' <span style="color:' . $config['posternamecolor'] . ';"><b>' . $name . '</b></span> '
+         . '<div class="postheader desktop">'
+         . ' <input class="post-checkbox" type="checkbox" aria-label="Seleccionar publicación">'
+         . '<span style="color:' . $config['posternamecolor'] . ';"><b>' . $name . '</b></span> '
          . '<span>' . $post['time'] . '</span> '
          . '<span class="postnum" onclick="quotePost(' . $post['num'] . ')" title="Responder citando esta publicación">No.' . $post['num'] . '</span>'
-         . '<span class="postactions">' . $reportLink . '</span>'
+         . '<span class="postactions">' . $postMenu . '</span>'
          . '</div>'
-         . '<div style="margin-top:4px;">' . $comment . '<br clear="all"></div>'
+         . '<div class="post-content mobile-post-content">' . $comment . '<br clear="all"></div>'
          . '</div>';
 }
 
@@ -1272,7 +1424,7 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
   <td><input type="file" name="image" accept="image/*" autocomplete="off" required> <small>(Máx 3MB)</small></td>
 </tr>
 </tbody></table>
-<p style="font-size:9pt;">Puedes leer las <a href="' . $config['rulesfile'] . '">reglas</a> y la <a href="' . $config['helpfile'] . '">ayuda de formato</a>.</p>
+<p style="font-size:9pt;">Puedes leer las <a href="' . siteUrl($config['rulesfile']) . '">reglas</a> y la <a href="' . siteUrl($config['helpfile']) . '">ayuda de formato</a>.</p>
 </form></center><hr>';
 
     $posthtml = '';
@@ -1304,9 +1456,9 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
 
     $pagehtml = paginationHtml($pagenumber, $totalpages, 'board', $config);
 
-    $content = '<center style="margin-bottom:5px"><h1>' . $title . '</h1><h3>' . $subtitle . '</h3></center><hr>
+    $content = '<div class="board-column"><center style="margin-bottom:5px"><h1>' . $title . '</h1><h3>' . $subtitle . '</h3></center><hr>
 <div class="nav">[<a href="' . siteUrl('index.html') . '">Inicio</a>]</div><hr>
-' . $formhtml . $posthtml . $pagehtml;
+' . $formhtml . $posthtml . $pagehtml . '</div>';
 
     return renderPage($title, $content, $config);
 }
@@ -1348,14 +1500,14 @@ function generateThread(array $thread, array $allposts, array $config): string {
   <td><input type="file" name="image" accept="image/*" autocomplete="off"> <small>(Máx 3MB)</small></td>
 </tr>
 </tbody></table>
-<p style="font-size:9pt;">Puedes leer las <a href="' . $config['rulesfile'] . '">reglas</a> y la <a href="' . $config['helpfile'] . '">ayuda de formato</a>.</p>
+<p style="font-size:9pt;">Puedes leer las <a href="' . siteUrl($config['rulesfile']) . '">reglas</a> y la <a href="' . siteUrl($config['helpfile']) . '">ayuda de formato</a>.</p>
 </form>
 </center>';
-    $content = '<center><h1 style="margin-bottom:5px;">' . $title . '</h1></center>
+    $content = '<div class="board-column"><center><h1 style="margin-bottom:5px;">' . $title . '</h1></center>
 <hr>
 <div class="nav">[<a href="' . siteUrl('index.html') . '">Inicio</a>] [<a href="' . siteUrl('board.html') . '">Tablón</a>]</div>
 <hr>
-' . $posthtml . $replyForm;
+' . $posthtml . $replyForm . '</div>';
 
     return renderPage($title, $content, $config);
 }
@@ -1583,8 +1735,7 @@ if ($mode === 'manage') {
 <hr>';
 
     if (password_verify('admin123', $config['adminpasswordhash'])) {
-        $content .= '<div style="background:#fff3cd;border:1px solid #e0a800;color:#7a5b00;padding:8px 12px;margin-bottom:10px;text-align:center;">Estás usando la contraseña de administrador por defecto. Cámbiala en <code>$config[\'adminpasswordhash\']</code> generando un nuevo hash con <code>password_hash()</code>.
-</div>';
+        $content .= '<div style="background:#fff3cd;border:1px solid #e0a800;color:#7a5b00;padding:8px 12px;margin:10px 0;text-align:center;">Estás usando la contraseña de administrador por defecto.</div>';
     }
 
     $content .= '<div class="admin-toolbar">
