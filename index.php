@@ -3,6 +3,7 @@
 $config = [
     'title'              => 'Tenma',
     'subtitle'           => 'Tablón anónimo para discusión, imágenes y debates breves',
+    'timezone'           => 'America/Mexico_City',
     'gradient'           => '#FED6AF',
     'background'         => '#FFFFEE',
     'section'            => '#FCA',
@@ -220,6 +221,7 @@ function ipHashSecret(array $config): string {
 
 // ===== INICIALIZACIÓN =====
 ini_set('default_charset', 'UTF-8');
+date_default_timezone_set($config['timezone']);
 
 function startAdminSession(array $config): void {
     if (session_status() === PHP_SESSION_ACTIVE) return;
@@ -860,13 +862,13 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     body { font-family: {$config['fonts']}; color: {$config['textcolor']}; padding: 10px; background: linear-gradient(to bottom, {$config['gradient']} 0, {$config['background']} 190px) no-repeat; background-color: {$config['background']}; overflow-x: hidden }
     a { text-decoration: none; color: {$config['linkcolor']} }
     a:hover { color: {$config['linkhover']} }
-    .container { width: 100%; max-width: 800px; margin: 0 auto }
+    .container { width: 100%; max-width: 800px; margin: 0 auto}
     .board-column { width: 100%; }
     .nav { text-align: center; margin: .3em 0 }
     hr { border: none; opacity: .3; border-top: 1px solid {$config['textcolor']} }
     ul { list-style-type: none; margin: 1em; padding: 0 }
     input[type=text], input[type=password], textarea { font-family:sans-serif; padding:.2em; border: 1px solid {$config['border']} }
-    .fileinfo  { font-size: 10pt; margin-bottom: 3px }
+    .fileinfo  { font-size: 10.5pt; margin-bottom: 3px }
     .mobile { display: none }
     .post-media { float: left; margin: 0 10px 4px 0 }
     .post-media img { display: block; height: auto }
@@ -875,8 +877,8 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     .postheader .subject { color: {$config['postsubjectcolor']}; font-weight: bold }
     .postactions { font-size: 10.5pt }
     .post-checkbox { margin: 0 5px 0 0; vertical-align: middle }
-    .op-post { width: 100%; padding: 5px 0; overflow: hidden }
-    .reply-post { display: inline-block; vertical-align: top; padding: 5px; margin: 0 0 4px 0; border: 1px solid #d9bfb7; background-color: {$config['postbackground']}; overflow: hidden; max-width: 100% }
+    .op-post { width: 100%; padding: 5px 0; overflow: visible }
+    .reply-post { display: block; padding: 5px; margin: 0 0 4px 0; border: 1px solid #d9bfb7; background-color: {$config['postbackground']}; overflow: visible; max-width: fit-content; }
     .post-content { margin-top: 4px }
     .mobile-post-info { line-height: 1.25; }
     .mobile-post-info .post-menu { float: left; margin: 0 5px 0 0; }
@@ -891,17 +893,18 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     .post-menu { display: inline-block; position: relative; margin-left: 4px; font-size: 10pt }
     .post-menu summary { display: inline-block; width: 16px; cursor: pointer; color: {$config['linkcolor']}; list-style: none }
     .post-menu summary::-webkit-details-marker { display: none }
-    .post-menu summary::before { content: '▶'; font-size: 11px }
+    .post-menu summary::before { content: '▶'; }
     .post-menu[open] summary::before { content: '▼'; }
     .post-menu summary:hover { color: {$config['linkhover']}; }
-    .post-menu-content { position: absolute; z-index: 10; top: 1.35em; left: 0; min-width: 115px; padding: 0; background: #f0e0d6; border: 1px solid #c9a79d; box-shadow: 1px 1px 2px #999; text-align: left }
+    .post-menu-content { position: absolute; z-index: 10; top: 1.35em; left: 0; min-width: 115px; padding: 0; background: #f0e0d6; border: 1px solid #c9a79d; text-align: left }
     .post-menu-content a, .post-menu-content button, .post-menu-label { display: block; width: 100%; padding: 3px 6px; border: 0; background: transparent; color: {$config['textcolor']}; font: inherit; text-align: left; white-space: nowrap; cursor: pointer }
     .post-menu-content a:hover, .post-menu-content button:hover, .post-menu-label:hover { background: #e4c8bd; color: {$config['linkhover']}; }
-    .post-menu-submenu { display: none; position: absolute; top: 44px; left: 100%; min-width: 87px; padding: 0; background: #f0e0d6; border: 1px solid #c9a79d; box-shadow: 1px 1px 2px #999; }
+    .post-menu-submenu { display: none; position: absolute; top: 44px; left: 100%; min-width: 87px; padding: 0; background: #f0e0d6; border: 1px solid #c9a79d; }
     .post-menu-submenu.flip { left: auto; right: 100%; }
     .post-menu-label:hover .post-menu-submenu, .post-menu-label:focus-within .post-menu-submenu { display: block; }
     .post-menu-submenu a { padding: 3px 6px; }
     .omitted { padding: 5px 0; font-size: 10pt }
+    .hidden-post-placeholder { display: inline-block; padding: 4px 10px; margin: 4px 0; border: 1px dashed #800; background: #eeaa88; color: #800; }
     .postnum { cursor: pointer; color: {$config['linkcolor']} }
     .postnum:hover { text-decoration: underline; color: {$config['linkhover']} }
     .report-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px }
@@ -920,6 +923,8 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     .admin-table th { background: #FCA; color: #800; padding: 5px }
     .admin-table td { padding: 5px }
     .admin-toolbar { text-align: center; margin: 10px 0 }
+    .delete { text-align: right; margin: 5px 0; }
+    .delete button { padding: .15em .3em; }
     @media (max-width: 600px) {
         body { padding: 5px; font-size: 10px }
         .container { max-width: none; margin: 0 }
@@ -943,7 +948,7 @@ function renderPage(string $title, string $content, array $config, array $nav = 
         .mobile-post-content { display: block; padding: 7px 6px; }
         .fileinfo { font-size: 9pt; line-height: 1.25 }
         .post-content { margin-top: 3px; line-height: 1.25 }
-        .post-menu-content { position: fixed; top: auto; left: 4px; right: auto }
+        .post-menu-content { position: absolute; top: 1.35em; left: 0; right: auto }
         .post-menu-submenu { position: static; margin-left: 8px; box-shadow: none }
         .post-menu-submenu.flip { left: auto; right: auto }
         table { max-width: 100%; overflow: hidden }
@@ -1039,8 +1044,23 @@ function renderPage(string $title, string $content, array $config, array $nav = 
         var hidden = tenmaHiddenPosts();
         var nodes = document.querySelectorAll('[data-post-id]');
         for (var i = 0; i < nodes.length; i++) {
-            if (hidden.indexOf(nodes[i].getAttribute('data-post-id')) !== -1) {
+            var postId = nodes[i].getAttribute('data-post-id');
+            var isHidden = hidden.indexOf(postId) !== -1;
+            var placeholder = nodes[i].previousElementSibling;
+            if (isHidden) {
                 nodes[i].style.display = 'none';
+                if (!placeholder || placeholder.getAttribute('data-hidden-post-id') !== postId) {
+                    placeholder = document.createElement('div');
+                    placeholder.className = 'hidden-post-placeholder';
+                    placeholder.setAttribute('data-hidden-post-id', postId);
+                    placeholder.innerHTML = 'Publicación oculta - <a href="#" onclick="tenmaShowHiddenPost(' + postId + '); return false;">Mostrar</a>';
+                    nodes[i].parentNode.insertBefore(placeholder, nodes[i]);
+                }
+            } else {
+                nodes[i].style.display = '';
+                if (placeholder && placeholder.getAttribute('data-hidden-post-id') === postId) {
+                    placeholder.remove();
+                }
             }
         }
     }
@@ -1049,6 +1069,16 @@ function renderPage(string $title, string $content, array $config, array $nav = 
         var hidden = tenmaHiddenPosts();
         postId = String(postId);
         if (hidden.indexOf(postId) === -1) hidden.push(postId);
+        try {
+            localStorage.setItem('tenma-hidden-posts', JSON.stringify(hidden));
+        } catch (error) {}
+        tenmaApplyHiddenPosts();
+    }
+
+    function tenmaShowHiddenPost(postId) {
+        var hidden = tenmaHiddenPosts().filter(function(id) {
+            return id !== String(postId);
+        });
         try {
             localStorage.setItem('tenma-hidden-posts', JSON.stringify(hidden));
         } catch (error) {}
@@ -1192,7 +1222,7 @@ function renderOP(array $post, array $allposts, bool $isthread, bool $summarize,
          . $mobileInfo
          . $imageHtml
          . '<div class="postheader desktop">'
-         . ' <input class="post-checkbox" type="checkbox" aria-label="Seleccionar publicación">'
+         . ' <input class="post-checkbox" type="checkbox" name="delete_posts[]" value="' . $post['num'] . '" aria-label="Seleccionar publicación">'
          . $subjHtml
          . '<span style="color:' . $config['posternamecolor'] . ';"><b>' . $name . '</b></span> '
          . '<span>' . $post['time'] . '</span> '
@@ -1211,7 +1241,8 @@ function renderReply(array $post, array $allposts, bool $summarize, array $confi
     $postMenu = renderPostMenu($post, (int)$post['parent'], $config);
 
     if ((int)$post['deleted'] > 0) {
-        return '<div id="p' . $post['num'] . '" style="padding:6px;margin:0 0 4px 0;background-color:' . $config['postbackground'] . ';">'
+        return '<div id="p' . $post['num'] . '" style="padding:6px;margin:0 0 4px 0;background-color:' . $config['postbackground'] . ';border: 1px solid #d9bfb7;
+    max-width: fit-content;">'
              . '<span>No.' . $post['num'] . ' </span>'
              . '<i>' . $config['deletionphrase'] . '</i>'
              . '</div>';
@@ -1230,7 +1261,7 @@ function renderReply(array $post, array $allposts, bool $summarize, array $confi
          . $mobileInfo
          . $imageHtml
          . '<div class="postheader desktop">'
-         . ' <input class="post-checkbox" type="checkbox" aria-label="Seleccionar publicación">'
+         . ' <input class="post-checkbox" type="checkbox" name="delete_posts[]" value="' . $post['num'] . '" aria-label="Seleccionar publicación">'
          . '<span style="color:' . $config['posternamecolor'] . ';"><b>' . $name . '</b></span> '
          . '<span>' . $post['time'] . '</span> '
          . '<span class="postnum" onclick="quotePost(' . $post['num'] . ')" title="Responder citando esta publicación">No.' . $post['num'] . '</span>'
@@ -1454,11 +1485,18 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
         $posthtml .= '<hr style="clear:both;">';
     }
 
+    $deleteButton = '<div class="delete"><button type="submit">Eliminar</button></div>';
+    $lastSeparator = '<hr style="clear:both;">';
+    if (substr($posthtml, -strlen($lastSeparator)) === $lastSeparator) {
+        $posthtml = substr($posthtml, 0, -strlen($lastSeparator)) . $deleteButton . $lastSeparator;
+    }
     $pagehtml = paginationHtml($pagenumber, $totalpages, 'board', $config);
 
     $content = '<div class="board-column"><center style="margin-bottom:5px"><h1>' . $title . '</h1><h3>' . $subtitle . '</h3></center><hr>
 <div class="nav">[<a href="' . siteUrl('index.html') . '">Inicio</a>]</div><hr>
-' . $formhtml . $posthtml . $pagehtml . '</div>';
+' . $formhtml . '<form method="POST" action="' . siteUrl($config['tenmafile']) . '" onsubmit="return confirm(\'¿Eliminar las publicaciones seleccionadas?\');">'
+ . '<input type="hidden" name="return_to" value="' . siteUrl('board.html') . '">'
+ . $posthtml . $pagehtml . '</form></div>';
 
     return renderPage($title, $content, $config);
 }
@@ -1469,7 +1507,7 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
 function generateThread(array $thread, array $allposts, array $config): string {
     $op        = $thread['op'];
     $threadnum = $op['num'];
-    $title     = ($config['title'] ?: 'Tenma') . ' - Hilo #' . $threadnum;
+    $title     = ($config['title'] ?: 'Tenma') . ' - Publicación #' . $threadnum;
 
     $posthtml = renderOP($op, $allposts, true, false, $config);
     foreach ($thread['replies'] as $reply) {
@@ -1503,11 +1541,14 @@ function generateThread(array $thread, array $allposts, array $config): string {
 <p style="font-size:9pt;">Puedes leer las <a href="' . siteUrl($config['rulesfile']) . '">reglas</a> y la <a href="' . siteUrl($config['helpfile']) . '">ayuda de formato</a>.</p>
 </form>
 </center>';
+    $deleteForm = '<div class="delete"><button type="submit">Eliminar</button></div>';
     $content = '<div class="board-column"><center><h1 style="margin-bottom:5px;">' . $title . '</h1></center>
 <hr>
 <div class="nav">[<a href="' . siteUrl('index.html') . '">Inicio</a>] [<a href="' . siteUrl('board.html') . '">Tablón</a>]</div>
 <hr>
-' . $posthtml . $replyForm . '</div>';
+' . '<form method="POST" action="' . siteUrl($config['tenmafile']) . '" onsubmit="return confirm(\'¿Eliminar las publicaciones seleccionadas?\');">'
+ . '<input type="hidden" name="return_to" value="' . threadUrl((int)$threadnum) . '">'
+ . $posthtml . $deleteForm . '</form>' . $replyForm . '</div>';
 
     return renderPage($title, $content, $config);
 }
@@ -1606,6 +1647,25 @@ if ($mode === 'report') {
 </form>
 <br></center>';
     echo renderPage($title, $content, $config);
+    exit;
+}
+
+// ===== ELIMINACIÓN DEL PROPIO USUARIO =====
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_posts'])) {
+    $postnums = is_array($_POST['delete_posts']) ? $_POST['delete_posts'] : [$_POST['delete_posts']];
+    foreach ($postnums as $postnum) {
+        $num  = (int)$postnum;
+        $post = $num > 0 ? getPostByNum($config, $num) : null;
+        if ($post !== null && (int)$post['deleted'] === 0 && hash_equals((string)$post['postiphash'], $hashedip)) {
+            deletePostCompletely($config, $num);
+        }
+    }
+    buildPages(readPosts($config), $config);
+    $returnTo = $_POST['return_to'] ?? siteUrl('board.html');
+    if (!is_string($returnTo) || $returnTo === '' || $returnTo[0] !== '/' || substr($returnTo, 0, 2) === '//') {
+        $returnTo = siteUrl('board.html');
+    }
+    header('Location: ' . $returnTo);
     exit;
 }
 
@@ -1772,7 +1832,7 @@ if ($mode === 'manage') {
 <div class="rc-time">' . $rtime . '</div>
 <div class="rc-actions">
   <button type="submit" name="dismiss_report" value="' . $r['id'] . '">Descartar</button>
-  <button type="submit" name="delete" value="' . $rnum . '">Eliminar post</button>
+  <button type="submit" name="delete" value="' . $rnum . '">Eliminar</button>
 </div>
 </div>';
         }
