@@ -858,6 +858,7 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     <meta charset="UTF-8">
     <link rel="icon" type="image/svg+xml" href="$faviconUrl">
     <style>
+    html { font-size: 16px }
     * { margin: 0; padding: 0; box-sizing: border-box; overflow-wrap: break-word; word-wrap: break-word }
     body { font-family: {$config['fonts']}; color: {$config['textcolor']}; padding: 10px; background: linear-gradient(to bottom, {$config['gradient']} 0, {$config['background']} 190px) no-repeat; background-color: {$config['background']}; overflow-x: hidden }
     a { text-decoration: none; color: {$config['linkcolor']} }
@@ -868,14 +869,14 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     hr { border: none; opacity: .3; border-top: 1px solid {$config['textcolor']} }
     ul { list-style-type: none; margin: 1em; padding: 0 }
     input[type=text], input[type=password], textarea { font-family:sans-serif; padding:.2em; border: 1px solid {$config['border']} }
-    .fileinfo  { font-size: 10.5pt; margin-bottom: 3px }
+    .fileinfo  { font-size: .92rem; margin-bottom: 3px }
     .mobile { display: none }
     .post-media { float: left; margin: 0 10px 4px 0 }
     .post-media img { display: block; height: auto }
     .error-message { color: {$config['errortextcolor']}; font-weight: bold }
-    .postheader { font-size: 10.5pt; display: contents }
+    .postheader { font-size: .92rem; display: contents }
     .postheader .subject { color: {$config['postsubjectcolor']}; font-weight: bold }
-    .postactions { font-size: 10.5pt }
+    .postactions { font-size: .92rem }
     .post-checkbox { margin: 0 5px 0 0; vertical-align: middle }
     .op-post { width: 100%; padding: 5px 0; overflow: visible }
     .reply-post { display: block; padding: 5px; margin: 0 0 4px 0; border: 1px solid #d9bfb7; background-color: {$config['postbackground']}; overflow: visible; max-width: fit-content; }
@@ -890,8 +891,8 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     .mobile-post-info .mobile-number a { white-space: nowrap; }
     .mobile-file-info { display: none; }
     .mobile-post-link { display: none; }
-    .post-menu { display: inline-block; position: relative; margin-left: 4px; font-size: 10pt }
-    .post-menu summary { display: inline-block; width: 16px; cursor: pointer; color: {$config['linkcolor']}; list-style: none }
+    .post-menu { display: inline-block; position: relative; margin-left: 4px; font-size: .875rem }
+    .post-menu summary { display: inline-block; width: 16px; cursor: pointer; color: {$config['textcolor']}; list-style: none }
     .post-menu summary::-webkit-details-marker { display: none }
     .post-menu summary::before { content: '▶'; }
     .post-menu[open] summary::before { content: '▼'; }
@@ -903,22 +904,22 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     .post-menu-submenu.flip { left: auto; right: 100%; }
     .post-menu-label:hover .post-menu-submenu, .post-menu-label:focus-within .post-menu-submenu { display: block; }
     .post-menu-submenu a { padding: 3px 6px; }
-    .omitted { padding: 5px 0; font-size: 10pt }
+    .omitted { padding: 0 0 5px; font-size: .875rem }
     .hidden-post-placeholder { display: inline-block; padding: 4px 10px; margin: 4px 0; border: 1px dashed #800; background: #eeaa88; color: #800; }
     .postnum { cursor: pointer; color: {$config['linkcolor']} }
     .postnum:hover { text-decoration: underline; color: {$config['linkhover']} }
     .report-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px }
     .report-card { background: #fff8f2; border: 1px solid #e09060; border-radius: 6px; padding: 10px 14px; min-width: 260px; flex: 1 1 260px }
-    .report-card .rc-num  { font-weight: bold; font-size: 11pt; color: {$config['postsubjectcolor']} }
-    .report-card .rc-reason { margin: 4px 0 8px; font-size: 10px }
-    .report-card .rc-time { font-size: 9pt; color: #888; margin-bottom: 8px }
+    .report-card .rc-num  { font-weight: bold; font-size: .97rem; color: {$config['postsubjectcolor']} }
+    .report-card .rc-reason { margin: 4px 0 8px; font-size: .625rem }
+    .report-card .rc-time { font-size: .79rem; color: #888; margin-bottom: 8px }
     .report-card .rc-actions button { margin-right: 4px; cursor: pointer }
     .help-list { overflow: hidden }
     .help-row { display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid #ddd; gap: 14px }
     .help-row:last-child { border-bottom: none }
     .help-syntax { font-family: monospace; flex: 0 0 100px }
-    .help-preview { flex: 0 0 100px; font-size: 11pt }
-    .help-desc { flex: 1 1 auto; font-size: 9.5pt; color: #666 }
+    .help-preview { flex: 0 0 100px; font-size: .97rem }
+    .help-desc { flex: 1 1 auto; font-size: .83rem; color: #666 }
     .admin-table { width: 100%; border-collapse: collapse; border: 1px solid #800}
     .admin-table th { background: #FCA; color: #800; padding: 5px }
     .admin-table td { padding: 5px }
@@ -926,27 +927,28 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     .delete { text-align: right; margin: 5px 0; }
     .delete button { padding: .15em .3em; }
     @media (max-width: 600px) {
-        body { padding: 5px; font-size: 10px }
+        html { font-size: 14px }
+        body { padding: 5px }
         .container { max-width: none; margin: 0 }
         .board-column { }
         .postheader { display: block; line-height: 1.35 }
         .desktop { display: none !important; }
         .mobile { display: inline; }
         .post-checkbox { margin-left: 0 }
-        .op-post { padding: 0; margin: 0 0 8px; background: {$config['postbackground']}; }
+        .op-post { padding: 0; margin: 0 0 5px; background: {$config['postbackground']}; border: 1px solid #D9BFB7; }
         .reply-post { display: block; width: fit-content; max-width: 100%; padding: 0; margin: 0 0 6px; background: {$config['postbackground']}; }
-        .mobile-post-info { display: block; min-height: 42px; padding: 7px 6px; background: {$config['postbackground']}; border-bottom: 1px solid #D9BFB7; }
-        .mobile-post-info .mobile-date { max-width: 58%; }
-        .mobile-post-info .mobile-number { display: block; }
+        .mobile-post-info { display: block; padding: 7px 6px; background: {$config['postbackground']}; border-bottom: 1px solid #D9BFB7; }
+        .mobile-post-info .mobile-date { display: flex }
+        .mobile-post-info .mobile-number { display: block; padding-left: 5px; }
         .mobile-file-info { display: block; clear: both; padding: 7px 6px 4px; color: #666; }
         .post-media { float: none; max-width: 100%; margin: 0; padding: 7px 6px 0; }
         .post-media img { max-width: 100% !important; max-height: 250px; }
         .post-media .desktop-fileinfo { display: none; }
-        .post-media .mobile-file-info { display: block; }
-        .mobile-post-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 6px; border-top: 1px solid #c5c9df; background: #d9dcef; }
-        .mobile-post-link .button { padding: 4px 9px; border: 1px solid #b8bdd5; border-radius: 3px; background: #eef0fa; }
+        .post-media .mobile-file-info { text-align: center; }
+        .mobile-post-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 6px; border-top: 1px solid #D9BFB7; background: #ead6ca; }
+        .mobile-post-link .button { color: {$config['textcolor']}; padding: 4px 9px; border: 1px solid #c0a69d; border-radius: 3px; background: #f0e0d6; }
         .mobile-post-content { display: block; padding: 7px 6px; }
-        .fileinfo { font-size: 9pt; line-height: 1.25 }
+        .fileinfo { display: none !important }
         .post-content { margin-top: 3px; line-height: 1.25 }
         .post-menu-content { position: absolute; top: 1.35em; left: 0; right: auto }
         .post-menu-submenu { position: static; margin-left: 8px; box-shadow: none }
@@ -1153,13 +1155,13 @@ function renderMobilePostInfo(array $post, int $threadnum, bool $isop, array $co
     $num       = (int)$post['num'];
     $name      = htmlspecialchars($post['name']);
     $subject   = htmlspecialchars($post['subject'] ?? '');
-    $subject   = $isop && $subject !== '' ? '<br><span class="mobile-subject">' . $subject . '</span>' : '';
+    $subject   = $isop && $subject !== '' ? '<span class="mobile-subject">' . $subject . '</span>' : '';
     $threadUrl = threadUrl($threadnum);
     $postMenu  = renderPostMenu($post, $threadnum, $config);
 
     return '<div class="mobile mobile-post-info">'
          . $postMenu
-         . '<span class="name-block"><span style="color:' . $config['posternamecolor'] . ';font-weight:bold;">' . $name . '</span>' . $subject . '</span>'
+         . '<span class="name-block"><span style="color:' . $config['posternamecolor'] . ';font-weight:bold;padding-right: 5px;">' . $name . '</span>' . $subject . '</span>'
          . '<span class="mobile-date">' . htmlspecialchars($post['time']) . '<span class="mobile-number">'
          . '<a href="' . $threadUrl . '#p' . $num . '">No.</a><a href="' . $threadUrl . '#q' . $num . '" onclick="quotePost(' . $num . '); return false;">' . $num . '</a>'
          . '</span></span></div>';
@@ -1456,7 +1458,7 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
 </tr>
 </tbody></table>
 <p style="font-size:9pt;">Puedes leer las <a href="' . siteUrl($config['rulesfile']) . '">reglas</a> y la <a href="' . siteUrl($config['helpfile']) . '">ayuda de formato</a>.</p>
-</form></center><hr>';
+</form></center><hr><br>';
 
     $posthtml = '';
     foreach ($threads as $thread) {
@@ -1545,7 +1547,7 @@ function generateThread(array $thread, array $allposts, array $config): string {
     $content = '<div class="board-column"><center><h1 style="margin-bottom:5px;">' . $title . '</h1></center>
 <hr>
 <div class="nav">[<a href="' . siteUrl('index.html') . '">Inicio</a>] [<a href="' . siteUrl('board.html') . '">Tablón</a>]</div>
-<hr>
+<hr><br>
 ' . '<form method="POST" action="' . siteUrl($config['tenmafile']) . '" onsubmit="return confirm(\'¿Eliminar las publicaciones seleccionadas?\');">'
  . '<input type="hidden" name="return_to" value="' . threadUrl((int)$threadnum) . '">'
  . $posthtml . $deleteForm . '</form>' . $replyForm . '</div>';
