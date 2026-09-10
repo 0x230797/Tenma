@@ -14,9 +14,22 @@ $config = [
     'formsidecolor'      => '#EA8',
     'border'             => '#800',
     'postbackground'     => '#EAD6CA',
+    'postborder'         => '#D9BFB7',
     'posternamecolor'    => '#117743',
     'postsubjectcolor'   => '#CC1105',
     'errortextcolor'     => '#B00020',
+    // Colores adicionales usados por el CSS generado (menús, reportes, ayuda, admin).
+    'menubackground'     => '#F0E0D6',
+    'menuborder'         => '#C9A79D',
+    'menuhoverbackground'=> '#E4C8BD',
+    'placeholderbackground' => '#EEAA88',
+    'reportcardbackground'  => '#FFF8F2',
+    'reportcardborder'      => '#E09060',
+    'mutedtextcolor'        => '#888888',
+    'helpbordercolor'       => '#DDDDDD',
+    'helpdesccolor'         => '#666666',
+    'mobilelinkbackground'  => '#EAD6CA',
+    'mobilebuttonbordercolor' => '#C0A69D',
     'defaultname'        => 'Anónimo',
     'deletionphrase'     => 'Eliminado',
     'rules'              => [
@@ -848,6 +861,8 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     $footer = footerHtml($config);
     $threadBaseUrl = siteUrl('threads/');
     $faviconUrl = siteUrl('favicon.svg');
+    $styleUrl = siteUrl('style.css');
+    $scriptUrl = siteUrl('tenma.js');
 
     return <<<HTML
     <!DOCTYPE html>
@@ -857,96 +872,166 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     <title>$title</title>
     <meta charset="UTF-8">
     <link rel="icon" type="image/svg+xml" href="$faviconUrl">
-    <style>
+    <link rel="stylesheet" href="$styleUrl">
+    </head>
+    <body>
+    <div class="container">
+    $content
+    <hr>
+    $navhtml
+    $footer
+    </div>
+    <script>window.TENMA_THREAD_BASE_URL = "$threadBaseUrl";</script>
+    <script src="$scriptUrl"></script>
+    </body>
+    </html>
+    HTML;
+}
+
+/**
+ * Genera la hoja de estilos del tablón a partir de los colores configurados.
+ */
+function generateStyles(array $config): string {
+    return <<<CSS
+    /* ===== Variables de color y tipografía (configurables desde \$config) ===== */
+    :root {
+        --font-family: {$config['fonts']};
+        --text-color: {$config['textcolor']};
+        --link-color: {$config['linkcolor']};
+        --link-hover-color: {$config['linkhover']};
+        --gradient-color: {$config['gradient']};
+        --background-color: {$config['background']};
+        --border-color: {$config['border']};
+        --section-color: {$config['section']};
+        --form-side-color: {$config['formsidecolor']};
+        --post-background: {$config['postbackground']};
+        --poster-name-color: {$config['posternamecolor']};
+        --post-subject-color: {$config['postsubjectcolor']};
+        --error-text-color: {$config['errortextcolor']};
+        --menu-background: {$config['menubackground']};
+        --menu-border: {$config['menuborder']};
+        --menu-hover-background: {$config['menuhoverbackground']};
+        --placeholder-background: {$config['placeholderbackground']};
+        --report-card-background: {$config['reportcardbackground']};
+        --report-card-border: {$config['reportcardborder']};
+        --muted-text-color: {$config['mutedtextcolor']};
+        --help-border-color: {$config['helpbordercolor']};
+        --help-desc-color: {$config['helpdesccolor']};
+        --mobile-link-background: {$config['mobilelinkbackground']};
+        --mobile-button-border: {$config['mobilebuttonbordercolor']};
+        --post-border: {$config['postborder']};
+    }
+
+    /* ===== Base y reset ===== */
     html { font-size: 16px }
     * { margin: 0; padding: 0; box-sizing: border-box; overflow-wrap: break-word; word-wrap: break-word }
-    body { font-family: {$config['fonts']}; color: {$config['textcolor']}; padding: 10px; background: linear-gradient(to bottom, {$config['gradient']} 0, {$config['background']} 190px) no-repeat; background-color: {$config['background']}; overflow-x: hidden }
-    a { text-decoration: none; color: {$config['linkcolor']} }
-    a:hover { color: {$config['linkhover']} }
+    body { font-family: var(--font-family); color: var(--text-color); padding: 10px; background: linear-gradient(to bottom, var(--gradient-color) 0, var(--background-color) 190px) no-repeat; background-color: var(--background-color); overflow-x: hidden }
+    hr { border: none; opacity: .3; border-top: 1px solid var(--text-color) }
+    ul { list-style-type: none; margin: 1em; padding: 0 }
+    .error-message { color: var(--error-text-color); font-weight: bold }
+    .mobile { display: none }
+
+    /* ===== Layout general ===== */
     .container { width: 100%; max-width: 800px; margin: 0 auto}
     .board-column { width: 100%; }
     .nav { text-align: center; margin: .3em 0 }
-    hr { border: none; opacity: .3; border-top: 1px solid {$config['textcolor']} }
-    ul { list-style-type: none; margin: 1em; padding: 0 }
-    input[type=text], input[type=password], textarea { font-family:sans-serif; padding:.2em; border: 1px solid {$config['border']} }
+
+    /* ===== Enlaces ===== */
+    a { text-decoration: none; color: var(--link-color) }
+    a:hover { color: var(--link-hover-color) }
+    .postnum { cursor: pointer; color: var(--link-color) }
+    .postnum:hover { text-decoration: underline; color: var(--link-hover-color) }
+
+    /* ===== Formularios ===== */
+    input[type=text], input[type=password], textarea { font-family:sans-serif; padding:.2em; border: 1px solid var(--border-color) }
+
+    /* ===== Publicaciones ===== */
     .fileinfo  { font-size: .92rem; margin-bottom: 3px }
-    .mobile { display: none }
     .post-media { float: left; margin: 0 10px 4px 0 }
     .post-media img { display: block; height: auto }
-    .error-message { color: {$config['errortextcolor']}; font-weight: bold }
     .postheader { font-size: .92rem; display: contents }
-    .postheader .subject { color: {$config['postsubjectcolor']}; font-weight: bold }
+    .postheader .subject { color: var(--post-subject-color); font-weight: bold }
     .postactions { font-size: .92rem }
     .post-checkbox { margin: 0 5px 0 0; vertical-align: middle }
     .op-post { width: 100%; padding: 5px 0; overflow: visible }
-    .reply-post { display: block; padding: 5px; margin: 0 0 4px 0; border: 1px solid #d9bfb7; background-color: {$config['postbackground']}; overflow: visible; max-width: fit-content; }
+    .reply-post { display: block; padding: 5px; margin: 0 0 4px 0; border: 1px solid var(--post-border); background-color: var(--post-background); overflow: visible; max-width: fit-content; }
     .post-content { margin-top: 4px }
+    .omitted { padding: 0 0 5px; font-size: .875rem }
+    .hidden-post-placeholder { display: inline-block; padding: 4px 10px; margin: 4px 0; border: 1px dashed var(--border-color); background: var(--placeholder-background); color: var(--text-color); }
+    .delete { text-align: right; margin: 5px 0; }
+    .delete button { padding: .15em .3em; }
+
+    /* ===== Cabecera de publicación en móvil ===== */
     .mobile-post-info { line-height: 1.25; }
     .mobile-post-info .post-menu { float: left; margin: 0 5px 0 0; }
     .mobile-post-info .post-menu summary::before { content: '...'; font-weight: bold; }
     .mobile-post-info .post-menu[open] summary::before { content: '...'; }
     .mobile-post-info .name-block { display: inline-block; vertical-align: top; }
-    .mobile-post-info .mobile-subject { color: {$config['postsubjectcolor']}; font-weight: bold; }
+    .mobile-post-info .mobile-subject { color: var(--post-subject-color); font-weight: bold; }
     .mobile-post-info .mobile-date { float: right; text-align: right; }
     .mobile-post-info .mobile-number a { white-space: nowrap; }
     .mobile-file-info { display: none; }
     .mobile-post-link { display: none; }
+
+    /* ===== Menú de acciones de publicación ===== */
     .post-menu { display: inline-block; position: relative; margin-left: 4px; font-size: .875rem }
-    .post-menu summary { display: inline-block; width: 16px; cursor: pointer; color: {$config['textcolor']}; list-style: none }
+    .post-menu summary { display: inline-block; width: 16px; cursor: pointer; color: var(--text-color); list-style: none }
     .post-menu summary::-webkit-details-marker { display: none }
     .post-menu summary::before { content: '▶'; }
     .post-menu[open] summary::before { content: '▼'; }
-    .post-menu summary:hover { color: {$config['linkhover']}; }
-    .post-menu-content { position: absolute; z-index: 10; top: 1.35em; left: 0; min-width: 115px; padding: 0; background: #f0e0d6; border: 1px solid #c9a79d; text-align: left }
-    .post-menu-content a, .post-menu-content button, .post-menu-label { display: block; width: 100%; padding: 3px 6px; border: 0; background: transparent; color: {$config['textcolor']}; font: inherit; text-align: left; white-space: nowrap; cursor: pointer }
-    .post-menu-content a:hover, .post-menu-content button:hover, .post-menu-label:hover { background: #e4c8bd; color: {$config['linkhover']}; }
-    .post-menu-submenu { display: none; position: absolute; top: 44px; left: 100%; min-width: 87px; padding: 0; background: #f0e0d6; border: 1px solid #c9a79d; }
+    .post-menu summary:hover { color: var(--link-hover-color); }
+    .post-menu-content { position: absolute; z-index: 10; top: 1.35em; left: 0; min-width: 115px; padding: 0; background: var(--menu-background); border: 1px solid var(--menu-border); text-align: left }
+    .post-menu-content a, .post-menu-content button, .post-menu-label { display: block; width: 100%; padding: 3px 6px; border: 0; background: transparent; color: var(--text-color); font: inherit; text-align: left; white-space: nowrap; cursor: pointer }
+    .post-menu-content a:hover, .post-menu-content button:hover, .post-menu-label:hover { background: var(--menu-hover-background); color: var(--link-hover-color); }
+    .post-menu-submenu { display: none; position: absolute; top: 44px; left: 100%; min-width: 87px; padding: 0; background: var(--menu-background); border: 1px solid var(--menu-border); }
     .post-menu-submenu.flip { left: auto; right: 100%; }
     .post-menu-label:hover .post-menu-submenu, .post-menu-label:focus-within .post-menu-submenu { display: block; }
     .post-menu-submenu a { padding: 3px 6px; }
-    .omitted { padding: 0 0 5px; font-size: .875rem }
-    .hidden-post-placeholder { display: inline-block; padding: 4px 10px; margin: 4px 0; border: 1px dashed #800; background: #eeaa88; color: #800; }
-    .postnum { cursor: pointer; color: {$config['linkcolor']} }
-    .postnum:hover { text-decoration: underline; color: {$config['linkhover']} }
+
+    /* ===== Reportes (panel de administración) ===== */
     .report-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px }
-    .report-card { background: #fff8f2; border: 1px solid #e09060; border-radius: 6px; padding: 10px 14px; min-width: 260px; flex: 1 1 260px }
-    .report-card .rc-num  { font-weight: bold; font-size: .97rem; color: {$config['postsubjectcolor']} }
+    .report-card { background: var(--report-card-background); border: 1px solid var(--report-card-border); border-radius: 6px; padding: 10px 14px; min-width: 260px; flex: 1 1 260px }
+    .report-card .rc-num  { font-weight: bold; font-size: .97rem; color: var(--post-subject-color) }
     .report-card .rc-reason { margin: 4px 0 8px; font-size: .625rem }
-    .report-card .rc-time { font-size: .79rem; color: #888; margin-bottom: 8px }
+    .report-card .rc-time { font-size: .79rem; color: var(--muted-text-color); margin-bottom: 8px }
     .report-card .rc-actions button { margin-right: 4px; cursor: pointer }
+
+    /* ===== Página de ayuda ===== */
     .help-list { overflow: hidden }
-    .help-row { display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid #ddd; gap: 14px }
+    .help-row { display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--help-border-color); gap: 14px }
     .help-row:last-child { border-bottom: none }
-    .help-syntax { font-family: monospace; flex: 0 0 100px }
+    .help-syntax { font-family: monospace; flex: 0 0 110px }
     .help-preview { flex: 0 0 100px; font-size: .97rem }
-    .help-desc { flex: 1 1 auto; font-size: .83rem; color: #666 }
-    .admin-table { width: 100%; border-collapse: collapse; border: 1px solid #800}
-    .admin-table th { background: #FCA; color: #800; padding: 5px }
+    .help-desc { flex: 1 1 auto; font-size: .83rem; color: var(--help-desc-color) }
+
+    /* ===== Panel de administración ===== */
+    .admin-table { width: 100%; border-collapse: collapse; border: 1px solid var(--border-color)}
+    .admin-table th { background: var(--section-color); color: var(--text-color); padding: 5px }
     .admin-table td { padding: 5px }
     .admin-toolbar { text-align: center; margin: 10px 0 }
-    .delete { text-align: right; margin: 5px 0; }
-    .delete button { padding: .15em .3em; }
+
+    /* ===== Responsive (móvil) ===== */
     @media (max-width: 600px) {
         html { font-size: 14px }
         body { padding: 5px }
         .container { max-width: none; margin: 0 }
-        .board-column { }
+        .board-column { width: 100%; }
         .postheader { display: block; line-height: 1.35 }
         .desktop { display: none !important; }
         .mobile { display: inline; }
         .post-checkbox { margin-left: 0 }
-        .op-post { padding: 0; margin: 0 0 5px; background: {$config['postbackground']}; border: 1px solid #D9BFB7; }
-        .reply-post { display: block; width: fit-content; max-width: 100%; padding: 0; margin: 0 0 6px; background: {$config['postbackground']}; }
-        .mobile-post-info { display: block; padding: 7px 6px; background: {$config['postbackground']}; border-bottom: 1px solid #D9BFB7; }
+        .op-post { padding: 0; margin: 0 0 5px; background: var(--post-background); border: 1px solid var(--post-border); }
+        .reply-post { display: block; width: fit-content; max-width: 100%; padding: 0; margin: 0 0 6px; background: var(--post-background); }
+        .mobile-post-info { display: block; padding: 7px 6px; background: var(--post-background); border-bottom: 1px solid var(--post-border); }
         .mobile-post-info .mobile-date { display: flex }
         .mobile-post-info .mobile-number { display: block; padding-left: 5px; }
-        .mobile-file-info { display: block; clear: both; padding: 7px 6px 4px; color: #666; }
+        .mobile-file-info { display: block; clear: both; padding: 7px 6px 4px; color: var(--muted-text-color); }
         .post-media { float: none; max-width: 100%; margin: 0; padding: 7px 6px 0; }
         .post-media img { max-width: 100% !important; max-height: 250px; }
         .post-media .desktop-fileinfo { display: none; }
         .post-media .mobile-file-info { text-align: center; }
-        .mobile-post-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 6px; border-top: 1px solid #D9BFB7; background: #ead6ca; }
-        .mobile-post-link .button { color: {$config['textcolor']}; padding: 4px 9px; border: 1px solid #c0a69d; border-radius: 3px; background: #f0e0d6; }
+        .mobile-post-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 6px; border-top: 1px solid var(--post-border); background: var(--mobile-link-background); }
+        .mobile-post-link .button { color: var(--text-color); padding: 4px 9px; border: 1px solid var(--mobile-button-border); border-radius: 3px; background: var(--menu-background); }
         .mobile-post-content { display: block; padding: 7px 6px; }
         .fileinfo { display: none !important }
         .post-content { margin-top: 3px; line-height: 1.25 }
@@ -956,44 +1041,44 @@ function renderPage(string $title, string $content, array $config, array $nav = 
         table { max-width: 100%; overflow: hidden }
         input[type=text], input[type=password], textarea { max-width: 100%; }
     }
-    </style>
-    </head>
-    <body>
-    <div class="container">
-    $content
-    <hr>
-    $navhtml
-    $footer
-    </div>
-    <script>
+    CSS;
+}
+
+/**
+ * Genera el script cliente compartido por todas las páginas del tablón.
+ * La base de enlaces de hilos ($threadBaseUrl) se inyecta aparte como
+ * window.TENMA_THREAD_BASE_URL, ya que depende de la URL del sitio.
+ */
+function generateScript(): string {
+    return <<<'JS'
     function quotePost(num) {
         var allTextareas = document.querySelectorAll('textarea[name="com"]');
-        
+
         // Si no hay ningún textarea, ir al hilo
         if (allTextareas.length === 0) {
-            window.location.href = '$threadBaseUrl' + num + '/?quote=' + num;
+            window.location.href = window.TENMA_THREAD_BASE_URL + num + '/?quote=' + num;
             return;
         }
-        
+
         // Si solo hay un textarea (estamos en el tablón), ir al hilo
         if (allTextareas.length === 1) {
             var ta = allTextareas[0];
             var form = ta.closest('form');
             var isCreateForm = form && form.querySelector('input[name="subject"]');
             if (isCreateForm) {
-                window.location.href = '$threadBaseUrl' + num + '/?quote=' + num;
+                window.location.href = window.TENMA_THREAD_BASE_URL + num + '/?quote=' + num;
                 return;
             }
         }
-        
+
         // Estamos en el hilo, agregar la cita al último textarea
         var ta = allTextareas[allTextareas.length - 1];
         ta.focus();
-        var quote = '>>' + num + '\\n';
+        var quote = '>>' + num + '\n';
         ta.value += quote;
         ta.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
-    
+
     // Al cargar la página, agregar la cita si viene en la URL
     window.addEventListener('load', function() {
         var url = window.location.href;
@@ -1002,7 +1087,7 @@ function renderPage(string $title, string $content, array $config, array $nav = 
             var quoteNum = quoteMatch[1];
             var ta = document.querySelector('textarea[name="com"]');
             if (ta && !ta.value.includes('>>' + quoteNum)) {
-                ta.value = '>>' + quoteNum + '\\n' + ta.value;
+                ta.value = '>>' + quoteNum + '\n' + ta.value;
                 ta.focus();
             }
         }
@@ -1105,10 +1190,7 @@ function renderPage(string $title, string $content, array $config, array $nav = 
     tenmaApplyHiddenPosts();
     tenmaUpdateTimes();
     setInterval(tenmaUpdateTimes, 30000);
-    </script>
-    </body>
-    </html>
-    HTML;
+    JS;
 }
 
 /**
@@ -1294,6 +1376,8 @@ function buildPages(array $posts, array $config): void {
     file_put_contents('favicon.svg',             generateFavicon($config),                           LOCK_EX);
     file_put_contents('robots.txt',              generateRobots(),                                   LOCK_EX);
     file_put_contents('sitemap.xml',             generateSitemap($threadlist, $config),              LOCK_EX);
+    file_put_contents('style.css',               generateStyles($config),                            LOCK_EX);
+    file_put_contents('tenma.js',                generateScript(),                                   LOCK_EX);
 
     foreach ($pages as $i => $pagethreads) {
         $filename = $i === 0 ? 'board.html' : 'board-' . $i . '.html';
