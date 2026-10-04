@@ -1,38 +1,38 @@
 <?php
 // ===== CONFIGURACIÓN =====
 $config = [
-    'title'              => 'Tenma',
-    'subtitle'           => 'Tablón anónimo para discusión, imágenes y debates breves',
-    'timezone'           => 'America/Mexico_City',
-    'gradient'           => '#FED6AF',
-    'background'         => '#FFFFEE',
-    'section'            => '#FCA',
-    'textcolor'          => '#800',
-    'linkcolor'          => '#0000EE',
-    'linkhover'          => '#FF0000',
-    'fonts'              => 'arial, helvetica, sans-serif',
-    'formsidecolor'      => '#EA8',
-    'border'             => '#800',
-    'postbackground'     => '#EAD6CA',
-    'postborder'         => '#D9BFB7',
-    'posternamecolor'    => '#117743',
-    'postsubjectcolor'   => '#CC1105',
-    'errortextcolor'     => '#B00020',
-    // Colores adicionales usados por el CSS generado (menús, reportes, ayuda, admin).
-    'menubackground'     => '#F0E0D6',
-    'menuborder'         => '#C9A79D',
-    'menuhoverbackground'=> '#E4C8BD',
-    'placeholderbackground' => '#EEAA88',
-    'reportcardbackground'  => '#FFF8F2',
-    'reportcardborder'      => '#E09060',
-    'mutedtextcolor'        => '#888888',
-    'helpbordercolor'       => '#DDDDDD',
-    'helpdesccolor'         => '#666666',
-    'mobilelinkbackground'  => '#EAD6CA',
-    'mobilebuttonbordercolor' => '#C0A69D',
-    'defaultname'        => 'Anónimo',
-    'deletionphrase'     => 'Eliminado',
-    'rules'              => [
+    'title'                     => 'Tenma',
+    'subtitle'                  => 'Tablón anónimo para discusión, imágenes y debates breves',
+    'timezone'                  => 'America/Mexico_City',
+    'gradient'                  => '#FED6AF',
+    'background'                => '#FFFFEE',
+    'section'                   => '#FCA',
+    'textcolor'                 => '#800',
+    'linkcolor'                 => '#0000EE',
+    'linkhover'                 => '#FF0000',
+    'fonts'                     => 'arial, helvetica, sans-serif',
+    'formsidecolor'             => '#EA8',
+    'border'                    => '#800',
+    'postbackground'            => '#EAD6CA',
+    'postborder'                => '#D9BFB7',
+    'posternamecolor'           => '#117743',
+    'postsubjectcolor'          => '#CC1105',
+    'errortextcolor'            => '#B00020',
+    'menubackground'            => '#F0E0D6',
+    'menuborder'                => '#C9A79D',
+    'menuhoverbackground'       => '#E4C8BD',
+    'placeholderbackground'     => '#EEAA88',
+    'reportcardbackground'      => '#FFF8F2',
+    'reportcardborder'          => '#E09060',
+    'mutedtextcolor'            => '#888888',
+    'helpbordercolor'           => '#DDDDDD',
+    'helpdesccolor'             => '#666666',
+    'mobilelinkbackground'      => '#EAD6CA',
+    'mobilebuttonbordercolor'   => '#C0A69D',
+    'defaultname'               => 'Anónimo',
+    'deletionphrase'            => 'Eliminado',
+    'rules'
+    => [
         'Respeto: mantén un comportamiento civil; no se permiten insultos, amenazas ni agresiones personales.',
         'Contenido ilegal: está prohibido publicar material que infrinja la ley del país donde se hospeda el sitio.',
         'Doxxing: no publiques datos personales de terceros (direcciones, teléfonos, documentos, identificadores privados).',
@@ -44,7 +44,8 @@ $config = [
         'Privacidad de menores: no publiques imágenes ni contenidos que pongan en riesgo a menores de edad.',
         'Al publicar aceptas que el contenido pueda almacenarse y mostrarse públicamente hasta que sea eliminado por moderación.',
     ],
-    'helps' => [
+    'helps'
+    => [
         [
             'title'  => 'Citar / responder',
             'syntax' => '>>123',
@@ -105,11 +106,6 @@ $config = [
     'maximagesize'       => 3 * 1024 * 1024,
     'allowedtypes'       => ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
     'badstrings'         => [],
-    // IPs o rangos CIDR de proxies inversos de confianza (p.ej. tu balanceador o Cloudflare).
-    // Solo si la petición llega desde una de estas direcciones se confiará en cabeceras
-    // como CF-Connecting-IP o X-Forwarded-For para determinar la IP real del visitante.
-    // Vacío por defecto: cualquier cabecera de este tipo enviada directamente por el
-    // cliente sería ignorada, evitando que se pueda falsificar la IP para evadir baneos.
     'trustedproxies'     => [],
 ];
 
@@ -380,8 +376,6 @@ foreach ($htaccessFiles as $path => $content) {
 
 $ip       = clientIp($config);
 $hashedip = substr(hash_hmac('sha256', $ip, ipHashSecret($config)), 0, 16);
-// Hash heredado de versiones anteriores (SHA1 sin pepper), solo para no perder
-// los baneos ya existentes al actualizar. Los baneos nuevos usan $hashedip.
 $legacyhashedip = substr(sha1($ip), 0, 16);
 
 // ===== CAPA DE BASE DE DATOS =====
@@ -706,7 +700,7 @@ function verifyAdminCsrfToken(array $config, string $token): bool {
 }
 
 if (isBanned($config, $hashedip, $legacyhashedip)) {
-    showError($config, 'Estás baneado de este BBS.');
+    showError($config, 'Estás baneado de este tablón.');
 }
 
 // ===== FUNCIONES AUXILIARES =====
@@ -737,21 +731,17 @@ function relativeTime(int $timestamp): string {
  */
 function showError(array $config, string $message): never {
     $title    = htmlspecialchars($config['title']);
-    $subtitle = htmlspecialchars($config['subtitle']);
     $homeUrl  = siteUrl('index.html');
 
     $content = <<<HTML
-<center> 
-<h1>$title</h1>
-<h3>$subtitle</h3>
-<br>
-<hr>
-<div style="margin: 1em;">
-<span class="error-message">$message</span>
-<br>
-[<a href="$homeUrl">Volver</a>]
-</div>
-<center> 
+    <div style="background:#fff;border:1px solid #800">
+        <h3 style="margin:0 0 10px;padding:3px 10px;background:#FCA">Error</h3>
+        <div style="text-align:center;margin:0 0 10px">
+            <span class="error-message">$message</span>
+            <br>
+            [<a href="$homeUrl">Volver</a>]
+        </div>
+    </div>
 HTML;
     echo renderPage($title, $content, $config);
     exit;
@@ -860,7 +850,7 @@ function renderPage(string $title, string $content, array $config, array $nav = 
 
     $footer = footerHtml($config);
     $threadBaseUrl = siteUrl('threads/');
-    $faviconUrl = siteUrl('favicon.svg');
+    $faviconUrl = siteUrl('favicon.ico');
     $styleUrl = siteUrl('style.css');
     $scriptUrl = siteUrl('tenma.js');
 
@@ -955,6 +945,11 @@ function generateStyles(array $config): string {
     .post-checkbox { margin: 0 5px 0 0; vertical-align: middle }
     .op-post { width: 100%; padding: 5px 0; overflow: visible }
     .reply-post { display: block; padding: 5px; margin: 0 0 4px 0; border: 1px solid var(--post-border); background-color: var(--post-background); overflow: visible; max-width: fit-content; }
+    .post-highlight { animation: post-highlight 5s ease-out; }
+    @keyframes post-highlight {
+        0%, 80% { background: #F0C0B0; border: 1px solid #D99F91; }
+        100% { background-color: var(--post-background); border: 1px solid var(--post-border); }
+    }
     .post-content { margin-top: 4px }
     .omitted { padding: 0 0 5px; font-size: .875rem }
     .hidden-post-placeholder { display: inline-block; padding: 4px 10px; margin: 4px 0; border: 1px dashed var(--border-color); background: var(--placeholder-background); color: var(--text-color); }
@@ -1005,10 +1000,12 @@ function generateStyles(array $config): string {
     .help-desc { flex: 1 1 auto; font-size: .83rem; color: var(--help-desc-color) }
 
     /* ===== Panel de administración ===== */
-    .admin-table { width: 100%; border-collapse: collapse; border: 1px solid var(--border-color)}
-    .admin-table th { background: var(--section-color); color: var(--text-color); padding: 5px }
-    .admin-table td { padding: 5px }
     .admin-toolbar { text-align: center; margin: 10px 0 }
+    .admin-post-entry { padding: 5px 0 }
+    .admin-post-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: .85rem }
+    .admin-post-hash { color: var(--muted-text-color); overflow-wrap: anywhere }
+    .admin-post-actions { display: flex; flex-wrap: wrap; gap: 5px }
+    .admin-post-actions button { padding: .15em .3em }
 
     /* ===== Responsive (móvil) ===== */
     @media (max-width: 600px) {
@@ -1078,6 +1075,27 @@ function generateScript(): string {
         ta.value += quote;
         ta.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
+
+    function tenmaHighlightPostFromHash() {
+        var match = window.location.hash.match(/^#p(\d+)$/);
+        if (!match) return;
+
+        var post = document.getElementById('p' + match[1]);
+        if (!post) return;
+
+        post.classList.remove('post-highlight');
+        void post.offsetWidth;
+        post.classList.add('post-highlight');
+    }
+
+    window.addEventListener('load', tenmaHighlightPostFromHash);
+    window.addEventListener('hashchange', tenmaHighlightPostFromHash);
+    document.addEventListener('click', function(event) {
+        var link = event.target.closest('a.quotelink');
+        if (link && link.pathname === window.location.pathname && link.hash === window.location.hash) {
+            tenmaHighlightPostFromHash();
+        }
+    });
 
     // Al cargar la página, agregar la cita si viene en la URL
     window.addEventListener('load', function() {
@@ -1198,12 +1216,14 @@ function generateScript(): string {
  */
 function generateErrorPage(array $config): string {
     $title   = ($config['title'] ?: 'Tenma') . ' - No encontrado';
-    $content = '<center>
-<h1 style="margin-bottom:5px;">404</h1>
-<hr><br>
-<p style="margin-bottom:15px;">El hilo o la imagen que buscas ya no existe.<br>Puede que haya sido eliminado por el administrador o eliminado automáticamente por antigüedad.</p>
-<a href="' . siteUrl('index.html') . '"><button style="padding:.15em .3em;cursor:pointer;">Volver a Inicio</button></a><br><br>
-</center>';
+    $content = '<div style="background:#fff;border:1px solid #800">
+        <h3 style="margin:0 0 10px;padding:3px 10px;background:#FCA">Error 404</h3>
+        <div style="text-align:center;margin:0 0 10px">
+            <p>El hilo o la imagen que buscas ya no existe.<br>Puede que haya sido eliminado por el administrador o eliminado automáticamente por antigüedad.</p>
+            <br>
+            [<a href="' . siteUrl('index.html') . '">Volver</a>]
+        </div>
+    </div>';
     return renderPage($title, $content, $config);
 }
 
@@ -1233,19 +1253,22 @@ function renderImageBlock(array $post, bool $large, array $config): string {
     return $fileinfo . $img;
 }
 
-function renderMobilePostInfo(array $post, int $threadnum, bool $isop, array $config): string {
+function renderMobilePostInfo(array $post, int $threadnum, bool $isop, array $config, bool $adminView = false): string {
     $num       = (int)$post['num'];
     $name      = htmlspecialchars($post['name']);
     $subject   = htmlspecialchars($post['subject'] ?? '');
     $subject   = $isop && $subject !== '' ? '<span class="mobile-subject">' . $subject . '</span>' : '';
     $threadUrl = threadUrl($threadnum);
-    $postMenu  = renderPostMenu($post, $threadnum, $config);
+    $postMenu  = $adminView ? '' : renderPostMenu($post, $threadnum, $config);
+    $postNumber = $adminView
+        ? 'No.' . $num
+        : '<a href="' . $threadUrl . '#p' . $num . '">No.</a><a href="' . $threadUrl . '#q' . $num . '" onclick="quotePost(' . $num . '); return false;">' . $num . '</a>';
 
     return '<div class="mobile mobile-post-info">'
          . $postMenu
          . '<span class="name-block"><span style="color:' . $config['posternamecolor'] . ';font-weight:bold;padding-right: 5px;">' . $name . '</span>' . $subject . '</span>'
          . '<span class="mobile-date">' . htmlspecialchars($post['time']) . '<span class="mobile-number">'
-         . '<a href="' . $threadUrl . '#p' . $num . '">No.</a><a href="' . $threadUrl . '#q' . $num . '" onclick="quotePost(' . $num . '); return false;">' . $num . '</a>'
+         . $postNumber
          . '</span></span></div>';
 }
 
@@ -1274,8 +1297,8 @@ function renderPostMenu(array $post, int $threadnum, array $config): string {
 /**
  * Renderiza una publicación de tipo OP (post inicial de un hilo).
  */
-function renderOP(array $post, array $allposts, bool $isthread, bool $summarize, array $config): string {
-    $postMenu = renderPostMenu($post, (int)$post['num'], $config);
+function renderOP(array $post, array $allposts, bool $isthread, bool $summarize, array $config, bool $showCheckbox = true, bool $adminView = false): string {
+    $postMenu = $adminView ? '' : renderPostMenu($post, (int)$post['num'], $config);
 
     if ((int)$post['deleted'] > 0) {
         return '<div id="p' . $post['num'] . '" class="op-post" data-post-id="' . $post['num'] . '" style="background-color:' . $config['postbackground'] . ';">'
@@ -1294,7 +1317,7 @@ function renderOP(array $post, array $allposts, bool $isthread, bool $summarize,
     }
     $comment   = formatComment($comment, $allposts);
     $imageHtml = renderImageBlock($post, true, $config);
-    $mobileInfo = renderMobilePostInfo($post, (int)$post['num'], true, $config);
+    $mobileInfo = renderMobilePostInfo($post, (int)$post['num'], true, $config, $adminView);
     $replyLink = !$isthread
         ? ' [<a href="' . threadUrl((int)$post['num']) . '">Responder</a>]' : '';
     $replyCount = count(array_filter($allposts, fn($p) => (int)$p['parent'] === (int)$post['num']));
@@ -1302,15 +1325,21 @@ function renderOP(array $post, array $allposts, bool $isthread, bool $summarize,
     $mobileLink = !$isthread
         ? '<div class="mobile mobile-post-link"><span class="info">' . $replyCount . ' respuestas / ' . $imageCount . ' imágenes</span><a class="button" href="' . threadUrl((int)$post['num']) . '">Ver hilo</a></div>'
         : '';
+    $checkbox = $showCheckbox
+        ? ' <input class="post-checkbox" type="checkbox" name="delete_posts[]" value="' . $post['num'] . '" aria-label="Seleccionar publicación">'
+        : '';
+    $postNumber = $adminView
+        ? 'No.' . $post['num']
+        : '<span class="postnum" onclick="quotePost(' . $post['num'] . ')" title="Responder citando esta publicación">No.' . $post['num'] . '</span>';
     return '<div id="p' . $post['num'] . '" class="op-post" data-post-id="' . $post['num'] . '">'
          . $mobileInfo
          . $imageHtml
          . '<div class="postheader desktop">'
-         . ' <input class="post-checkbox" type="checkbox" name="delete_posts[]" value="' . $post['num'] . '" aria-label="Seleccionar publicación">'
+         . $checkbox
          . $subjHtml
          . '<span style="color:' . $config['posternamecolor'] . ';"><b>' . $name . '</b></span> '
          . '<span>' . $post['time'] . '</span> '
-         . '<span class="postnum" onclick="quotePost(' . $post['num'] . ')" title="Responder citando esta publicación">No.' . $post['num'] . '</span>'
+         . $postNumber
          . '<span class="postactions">' . $replyLink . $postMenu . '</span>'
          . '</div>'
          . '<div class="post-content mobile-post-content">' . $comment . '<br clear="all"></div>'
@@ -1321,8 +1350,8 @@ function renderOP(array $post, array $allposts, bool $isthread, bool $summarize,
 /**
  * Renderiza una respuesta de hilo con su contenido, imagen y acciones.
  */
-function renderReply(array $post, array $allposts, bool $summarize, array $config): string {
-    $postMenu = renderPostMenu($post, (int)$post['parent'], $config);
+function renderReply(array $post, array $allposts, bool $summarize, array $config, bool $showCheckbox = true, bool $adminView = false): string {
+    $postMenu = $adminView ? '' : renderPostMenu($post, (int)$post['parent'], $config);
 
     if ((int)$post['deleted'] > 0) {
         return '<div id="p' . $post['num'] . '" style="padding:6px;margin:0 0 4px 0;background-color:' . $config['postbackground'] . ';border: 1px solid #d9bfb7;
@@ -1339,16 +1368,22 @@ function renderReply(array $post, array $allposts, bool $summarize, array $confi
     }
     $comment   = formatComment($comment, $allposts);
     $imageHtml = renderImageBlock($post, false, $config);
-    $mobileInfo = renderMobilePostInfo($post, (int)$post['parent'], false, $config);
+    $mobileInfo = renderMobilePostInfo($post, (int)$post['parent'], false, $config, $adminView);
+    $checkbox = $showCheckbox
+        ? ' <input class="post-checkbox" type="checkbox" name="delete_posts[]" value="' . $post['num'] . '" aria-label="Seleccionar publicación">'
+        : '';
+    $postNumber = $adminView
+        ? 'No.' . $post['num']
+        : '<span class="postnum" onclick="quotePost(' . $post['num'] . ')" title="Responder citando esta publicación">No.' . $post['num'] . '</span>';
 
     return '<div id="p' . $post['num'] . '" class="reply-post" data-post-id="' . $post['num'] . '">'
          . $mobileInfo
          . $imageHtml
          . '<div class="postheader desktop">'
-         . ' <input class="post-checkbox" type="checkbox" name="delete_posts[]" value="' . $post['num'] . '" aria-label="Seleccionar publicación">'
+         . $checkbox
          . '<span style="color:' . $config['posternamecolor'] . ';"><b>' . $name . '</b></span> '
          . '<span>' . $post['time'] . '</span> '
-         . '<span class="postnum" onclick="quotePost(' . $post['num'] . ')" title="Responder citando esta publicación">No.' . $post['num'] . '</span>'
+         . $postNumber
          . '<span class="postactions">' . $postMenu . '</span>'
          . '</div>'
          . '<div class="post-content mobile-post-content">' . $comment . '<br clear="all"></div>'
@@ -1369,11 +1404,11 @@ function buildPages(array $posts, array $config): void {
         mkdir($config['threaddir'], 0755, true);
     }
 
-    file_put_contents('index.html',              generateIndex($threadlist, $posts, $config),        LOCK_EX);
+    file_put_contents('index.html',              generateIndex($posts, $config),                     LOCK_EX);
     file_put_contents($config['rulesfile'],      generateRules($config),                             LOCK_EX);
     file_put_contents($config['helpfile'],       generateHelp($config),                              LOCK_EX);
     file_put_contents($config['errorfile'],      generateErrorPage($config),                         LOCK_EX);
-    file_put_contents('favicon.svg',             generateFavicon($config),                           LOCK_EX);
+    file_put_contents('favicon.ico',             generateFavicon($config),                           LOCK_EX);
     file_put_contents('robots.txt',              generateRobots(),                                   LOCK_EX);
     file_put_contents('sitemap.xml',             generateSitemap($threadlist, $config),              LOCK_EX);
     file_put_contents('style.css',               generateStyles($config),                            LOCK_EX);
@@ -1443,7 +1478,7 @@ function generateHelp(array $config): string {
 /**
  * Genera la página principal con actividad reciente, galería de imágenes y estadísticas.
  */
-function generateIndex(array $threadlist, array $allposts, array $config): string {
+function generateIndex(array $allposts, array $config): string {
     $title = $config['title'] ?: 'Tenma';
 
     $recent   = array_reverse(array_slice($allposts, -10));
@@ -1458,9 +1493,7 @@ function generateIndex(array $threadlist, array $allposts, array $config): strin
         $name    = htmlspecialchars($p['name']);
         $ts      = (int)$p['now'];
         $reltime = relativeTime($ts);
-        $actItems .= '<li><a href="' . threadUrl($thread) . '#p' . $p['num'] . '">>>' . $p['num'] . '</a>'
-                   . ' por <b style="color:' . $config['posternamecolor'] . ';">' . $name . '</b>: '
-                   . $preview . ' <small style="color:#888;float:inline-end;margin-right:1em;" data-ts="' . $ts . '">(' . $reltime . ')</small></li>';
+        $actItems .= '<li><small style="color:#888;float:inline-end;margin-right:1em;" data-ts="' . $ts . '">(' . $reltime . ')</small><b style="color:' . $config['posternamecolor'] . '">' . $name . '</b>: ' . $preview . ' <a href="' . threadUrl($thread) . '#p' . $p['num'] . '">>></a></li>';
     }
     $activity = '<div style="background:#fff;margin:1em 0;border:1px solid #800;">
 <h3 style="margin:0 0 10px;padding:3px 10px;background:' . $config['section'] . ';">Última actividad</h3>
@@ -1925,36 +1958,33 @@ if ($mode === 'manage') {
         $content .= '</div></form>';
     }
 
-    $content .= '<hr><form method="POST" action="?mode=manage"><br>
+    $content .= '<hr><form method="POST" action="?mode=manage">
 <input type="hidden" name="page" value="' . $pagenumber . '">
 <input type="hidden" name="csrf_token" value="' . $csrfToken . '">
-<table class="admin-table">
-<tr><th>#</th><th>Nombre</th><th>Asunto</th><th>Comentario</th><th>Hilo</th><th>Hora</th><th>ID</th><th>Acciones</th></tr>';
+<div class="admin-post-list">';
 
-    foreach ($pageposts as $idx => $p) {
-        $num     = $p['num'];
-        $name    = htmlspecialchars($p['name']);
-        $subject = htmlspecialchars($p['subject'] ?? '');
-        $commentRaw = str_replace(["\r\n", "\r", "\n"], ' ', $p['comment']);
-        $comment    = htmlspecialchars(mb_substr($commentRaw, 0, 50)) . (mb_strlen($commentRaw) > 50 ? '...' : '');
-        $parent  = $p['parent'] > 0 ? '#' . $p['parent'] : '(OP)';
-        $hash    = $p['postiphash'];
-        $bg      = ($idx % 2) ? '#f0e0d6' : '#fff8f2';
+    foreach ($pageposts as $p) {
+        $num = (int)$p['num'];
+        $hash = (string)$p['postiphash'];
+        $postHtml = (int)$p['parent'] > 0
+            ? renderReply($p, $allpostsraw, true, $config, false, true)
+            : renderOP($p, $allpostsraw, false, true, $config, false, true);
 
-        $content .= '<tr style="background:' . $bg . ';">
-<td>' . $num . '</td><td>' . $name . '</td><td>' . $subject . '</td>
-<td>' . $comment . '</td><td>' . $parent . '</td><td>' . $p['time'] . '</td><td>' . $hash . '</td>
-<td>';
+        $content .= '<div class="admin-post-entry">'
+            . $postHtml
+            . '<div class="admin-post-controls"><span class="admin-post-hash">ID: '
+            . htmlspecialchars($hash, ENT_QUOTES, 'UTF-8') . '</span><div class="admin-post-actions">';
         if ((int)$p['deleted'] > 0) {
-            $content .= '<i>Eliminado</i><br>';
+            $content .= '<i>Eliminado</i>';
         } else {
-            $content .= '<button type="submit" name="delete" value="' . $num . '">Eliminar</button><br>';
+            $content .= '<button type="submit" name="delete" value="' . $num . '">Eliminar</button>';
         }
-        $content .= '<button type="submit" name="ban" value="' . $hash . '">Ban IP</button><br>';
-        $content .= '</td></tr>';
+        $content .= '<button type="submit" name="ban" value="' . htmlspecialchars($hash, ENT_QUOTES, 'UTF-8') . '">Ban IP</button>'
+            . '</div></div><hr style="clear:both;">'
+            . '</div>';
     }
 
-    $content .= '</table></form>';
+    $content .= '</div></form>';
     $content .= paginationHtml($pagenumber, $totalpages, 'manage', $config);
 
     echo renderPage($title, $content, $config, ['index.html' => 'Inicio']);
