@@ -850,7 +850,7 @@ function renderPage(string $title, string $content, array $config, array $nav = 
 
     $footer = footerHtml($config);
     $threadBaseUrl = siteUrl('threads/');
-    $faviconUrl = siteUrl('favicon.ico');
+    $faviconUrl = siteUrl('favicon.svg');
     $styleUrl = siteUrl('style.css');
     $scriptUrl = siteUrl('tenma.js');
 
@@ -1408,7 +1408,7 @@ function buildPages(array $posts, array $config): void {
     file_put_contents($config['rulesfile'],      generateRules($config),                             LOCK_EX);
     file_put_contents($config['helpfile'],       generateHelp($config),                              LOCK_EX);
     file_put_contents($config['errorfile'],      generateErrorPage($config),                         LOCK_EX);
-    file_put_contents('favicon.ico',             generateFavicon($config),                           LOCK_EX);
+    file_put_contents('favicon.svg',             generateFavicon($config),                           LOCK_EX);
     file_put_contents('robots.txt',              generateRobots(),                                   LOCK_EX);
     file_put_contents('sitemap.xml',             generateSitemap($threadlist, $config),              LOCK_EX);
     file_put_contents('style.css',               generateStyles($config),                            LOCK_EX);
