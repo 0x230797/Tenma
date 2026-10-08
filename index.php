@@ -321,6 +321,8 @@ ErrorDocument 404 {$errorDocumentUrl}
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^(index\.html|board(-[0-9]+)?\.html)$ index.php?static=$1 [L,QSA]
     RewriteRule ^thread-([0-9]+)\.html$ threads/thread-$1.html [L,R=301]
     RewriteRule ^threads/([0-9]+)/?$ threads/thread-$1.html [L,QSA]
     RewriteRule ^threads/([0-9]+)/(.*)$ threads/thread-$1.html [L,QSA]
@@ -365,7 +367,11 @@ foreach ($htaccessFiles as $path => $content) {
     if (!$needsWrite && $path === '.htaccess') {
         $existing = (string)@file_get_contents($path);
         $expectedErrorDocument = 'ErrorDocument 404 ' . $errorDocumentUrl;
-        if (strpos($existing, $expectedErrorDocument) === false || strpos($existing, 'RewriteRule ^threads') === false) {
+        if (
+            strpos($existing, $expectedErrorDocument) === false
+            || strpos($existing, 'RewriteRule ^threads') === false
+            || strpos($existing, 'RewriteRule ^(index\\.html|board') === false
+        ) {
             $needsWrite = true;
         }
     }
@@ -405,8 +411,13 @@ function getPDO(array $config): PDO {
     )");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_posts_parent ON posts(parent)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS bans (
-        hash TEXT PRIMARY KEY
+        hash       TEXT    PRIMARY KEY,
+        expires_at INTEGER NOT NULL DEFAULT 0
     )");
+    $banColumns = $pdo->query('PRAGMA table_info(bans)')->fetchAll(PDO::FETCH_COLUMN, 1);
+    if (!in_array('expires_at', $banColumns, true)) {
+        $pdo->exec('ALTER TABLE bans ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0');
+    }
     $pdo->exec("CREATE TABLE IF NOT EXISTS reports (
         id     INTEGER PRIMARY KEY AUTOINCREMENT,
         num    INTEGER NOT NULL,
@@ -600,20 +611,39 @@ function clearLoginAttempts(array $config, string $hash): void {
 
 function isBanned(array $config, string $hash, string $legacyHash = ''): bool {
     if ($legacyHash !== '') {
-        $stmt = getPDO($config)->prepare('SELECT 1 FROM bans WHERE hash = :hash OR hash = :legacy');
-        $stmt->execute(['hash' => $hash, 'legacy' => $legacyHash]);
+        $stmt = getPDO($config)->prepare('SELECT 1 FROM bans
+            WHERE (hash = :hash OR hash = :legacy) AND (expires_at = 0 OR expires_at > :now)');
+        $stmt->execute(['hash' => $hash, 'legacy' => $legacyHash, 'now' => time()]);
         return (bool)$stmt->fetchColumn();
     }
-    $stmt = getPDO($config)->prepare('SELECT 1 FROM bans WHERE hash = :hash');
-    $stmt->execute(['hash' => $hash]);
+    $stmt = getPDO($config)->prepare('SELECT 1 FROM bans
+        WHERE hash = :hash AND (expires_at = 0 OR expires_at > :now)');
+    $stmt->execute(['hash' => $hash, 'now' => time()]);
     return (bool)$stmt->fetchColumn();
 }
 
 /**
- * Añade un hash de IP a la tabla de baneos si aún no estaba registrado.
+ * Añade o actualiza un baneo. expiresAt igual a cero representa un baneo permanente.
  */
-function addBan(array $config, string $hash): void {
-    getPDO($config)->prepare('INSERT OR IGNORE INTO bans (hash) VALUES (:hash)')->execute(['hash' => $hash]);
+function addBan(array $config, string $hash, int $expiresAt = 0): void {
+    getPDO($config)->prepare('INSERT INTO bans (hash, expires_at) VALUES (:hash, :expires_at)
+        ON CONFLICT(hash) DO UPDATE SET expires_at = excluded.expires_at')
+        ->execute(['hash' => $hash, 'expires_at' => $expiresAt]);
+}
+
+/**
+ * Devuelve todos los baneos registrados para que el administrador pueda revisarlos y quitarlos.
+ */
+function getBans(array $config): array {
+    return getPDO($config)->query('SELECT hash, expires_at FROM bans ORDER BY expires_at DESC, hash ASC')
+        ->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Quita un baneo por su hash.
+ */
+function removeBan(array $config, string $hash): void {
+    getPDO($config)->prepare('DELETE FROM bans WHERE hash = :hash')->execute(['hash' => $hash]);
 }
 
 /**
@@ -701,6 +731,19 @@ function verifyAdminCsrfToken(array $config, string $token): bool {
 
 if (isBanned($config, $hashedip, $legacyhashedip)) {
     showError($config, 'Estás baneado de este tablón.');
+}
+
+$staticPage = $_GET['static'] ?? '';
+if (is_string($staticPage) && preg_match('/\A(?:index\.html|board(?:-[0-9]+)?\.html)\z/', $staticPage)) {
+    $staticPath = __DIR__ . DIRECTORY_SEPARATOR . $staticPage;
+    if (!is_file($staticPath)) {
+        http_response_code(404);
+        echo generateErrorPage($config);
+        exit;
+    }
+    header('Content-Type: text/html; charset=UTF-8');
+    readfile($staticPath);
+    exit;
 }
 
 // ===== FUNCIONES AUXILIARES =====
@@ -832,7 +875,7 @@ function getThreads(array $posts): array {
  */
 function footerHtml(array $config): string {
     $title = htmlspecialchars($config['title'] ?: 'Tenma');
-    return '<div style="text-align:center;font-size:9pt;color:#aaa;margin-top:8px;padding:4px 0;">' . $title . ' &mdash; Tablón anónimo para discusión, imágenes y debates breves</div>';
+    return '<div style="text-align:center;font-size:.9rem;color:#aaa;margin-top:8px;padding:4px 0;">' . $title . ' &mdash; Tablón anónimo para discusión, imágenes y debates breves</div>';
 }
 
 /**
@@ -913,9 +956,10 @@ function generateStyles(array $config): string {
     }
 
     /* ===== Base y reset ===== */
-    html { font-size: 16px }
+    html { font-size: clamp(1rem, calc(.9375rem + .25vw), 1rem) }
     * { margin: 0; padding: 0; box-sizing: border-box; overflow-wrap: break-word; word-wrap: break-word }
     body { font-family: var(--font-family); color: var(--text-color); padding: 10px; background: linear-gradient(to bottom, var(--gradient-color) 0, var(--background-color) 190px) no-repeat; background-color: var(--background-color); overflow-x: hidden }
+    button, input, select, textarea { font-size: 1rem }
     hr { border: none; opacity: .3; border-top: 1px solid var(--text-color) }
     ul { list-style-type: none; margin: 1em; padding: 0 }
     .error-message { color: var(--error-text-color); font-weight: bold }
@@ -934,6 +978,7 @@ function generateStyles(array $config): string {
 
     /* ===== Formularios ===== */
     input[type=text], input[type=password], textarea { font-family:sans-serif; padding:.2em; border: 1px solid var(--border-color) }
+    .post-form ::placeholder { opacity: 0 }
 
     /* ===== Publicaciones ===== */
     .fileinfo  { font-size: .92rem; margin-bottom: 3px }
@@ -958,7 +1003,7 @@ function generateStyles(array $config): string {
 
     /* ===== Cabecera de publicación en móvil ===== */
     .mobile-post-info { line-height: 1.25; }
-    .mobile-post-info .post-menu { float: left; margin: 0 5px 0 0; }
+    .mobile-post-info .post-menu { float: left; margin: 0 5px 0 20px; }
     .mobile-post-info .post-menu summary::before { content: '...'; font-weight: bold; }
     .mobile-post-info .post-menu[open] summary::before { content: '...'; }
     .mobile-post-info .name-block { display: inline-block; vertical-align: top; }
@@ -984,11 +1029,13 @@ function generateStyles(array $config): string {
     .post-menu-submenu a { padding: 3px 6px; }
 
     /* ===== Reportes (panel de administración) ===== */
-    .report-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px }
-    .report-card { background: var(--report-card-background); border: 1px solid var(--report-card-border); border-radius: 6px; padding: 10px 14px; min-width: 260px; flex: 1 1 260px }
+    .report-grid { display: flex; flex-wrap: wrap; gap: 10px; padding-bottom: 10px }
+    .report-card { background: var(--report-card-background); border: 1px solid var(--report-card-border); padding: 10px 14px; min-width: 260px; flex: 1 1 260px }
+    .reported-post { flex: 1 1 100%; min-width: 0 }
+    .reported-publication { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--report-card-border) }
     .report-card .rc-num  { font-weight: bold; font-size: .97rem; color: var(--post-subject-color) }
-    .report-card .rc-reason { margin: 4px 0 8px; font-size: .625rem }
-    .report-card .rc-time { font-size: .79rem; color: var(--muted-text-color); margin-bottom: 8px }
+    .report-card .rc-reason { margin: 4px 0 8px; font-size: .75rem }
+    .report-card .rc-time { font-size: .8125rem; color: var(--muted-text-color); margin-bottom: 8px }
     .report-card .rc-actions button { margin-right: 4px; cursor: pointer }
 
     /* ===== Página de ayuda ===== */
@@ -997,25 +1044,29 @@ function generateStyles(array $config): string {
     .help-row:last-child { border-bottom: none }
     .help-syntax { font-family: monospace; flex: 0 0 110px }
     .help-preview { flex: 0 0 100px; font-size: .97rem }
-    .help-desc { flex: 1 1 auto; font-size: .83rem; color: var(--help-desc-color) }
+    .help-desc { flex: 1 1 auto; font-size: .9rem; color: var(--help-desc-color) }
 
     /* ===== Panel de administración ===== */
     .admin-toolbar { text-align: center; margin: 10px 0 }
+    .admin-tab-nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 10px 0 16px }
+    .admin-tab-nav form { display: inline }
+    .admin-tab-nav button[aria-current="page"] { font-weight: bold }
     .admin-post-entry { padding: 5px 0 }
-    .admin-post-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: .85rem }
+    .admin-post-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: .9rem }
     .admin-post-hash { color: var(--muted-text-color); overflow-wrap: anywhere }
     .admin-post-actions { display: flex; flex-wrap: wrap; gap: 5px }
-    .admin-post-actions button { padding: .15em .3em }
+    .admin-post-actions button { padding: 0 .3em }
 
     /* ===== Responsive (móvil) ===== */
     @media (max-width: 600px) {
-        html { font-size: 14px }
         body { padding: 5px }
         .container { max-width: none; margin: 0 }
         .board-column { width: 100%; }
         .postheader { display: block; line-height: 1.35 }
         .desktop { display: none !important; }
         .mobile { display: inline; }
+        .mobile-post-info { position: relative; }
+        .mobile-post-info .post-checkbox { position: absolute; top: 7px; left: 6px; width: 16px; height: 16px; margin: 0; }
         .post-checkbox { margin-left: 0 }
         .op-post { padding: 0; margin: 0 0 5px; background: var(--post-background); border: 1px solid var(--post-border); }
         .reply-post { display: block; width: fit-content; max-width: 100%; padding: 0; margin: 0 0 6px; background: var(--post-background); }
@@ -1037,6 +1088,22 @@ function generateStyles(array $config): string {
         .post-menu-submenu.flip { left: auto; right: auto }
         table { max-width: 100%; overflow: hidden }
         input[type=text], input[type=password], textarea { max-width: 100%; }
+        .post-form { width: 100%; }
+        .post-form ::placeholder { opacity: 1; }
+        .post-form-table { display: block; width: 100%; max-width: 480px; margin: 0 auto !important; border-spacing: 0 !important; }
+        .post-form-table tbody, .post-form-table tr { display: grid; width: 100%; }
+        .post-form-table tr { margin-bottom: 3px; }
+        .post-form-table td { display: block; width: 100%; }
+        .post-form-table td:first-child { display: none; }
+        .post-form-table td + td { padding: 0; }
+        .post-form-table tr:first-child td + td { display: flex; align-items: center; gap: 6px; }
+        .post-form-table tr:first-child input[type=text] { flex: 1; width: auto; min-width: 0; }
+        .post-form-table input[type=text], .post-form-table textarea { display: block; width: 100%; max-width: none; }
+        .post-form-table textarea { min-height: 100px; resize: vertical; }
+        .post-form-table input[type=submit] { display: block; flex: none; margin-top: 0; }
+        .post-form-table input[type=file] { display: block; width: 100%; max-width: 100%; }
+        .post-form-table small { display: block; margin-top: 4px; }
+        .post-form p { padding: 0 8px; line-height: 1.4; }
     }
     CSS;
 }
@@ -1253,7 +1320,7 @@ function renderImageBlock(array $post, bool $large, array $config): string {
     return $fileinfo . $img;
 }
 
-function renderMobilePostInfo(array $post, int $threadnum, bool $isop, array $config, bool $adminView = false): string {
+function renderMobilePostInfo(array $post, int $threadnum, bool $isop, array $config, bool $showCheckbox = true, bool $adminView = false): string {
     $num       = (int)$post['num'];
     $name      = htmlspecialchars($post['name']);
     $subject   = htmlspecialchars($post['subject'] ?? '');
@@ -1263,8 +1330,12 @@ function renderMobilePostInfo(array $post, int $threadnum, bool $isop, array $co
     $postNumber = $adminView
         ? 'No.' . $num
         : '<a href="' . $threadUrl . '#p' . $num . '">No.</a><a href="' . $threadUrl . '#q' . $num . '" onclick="quotePost(' . $num . '); return false;">' . $num . '</a>';
+    $checkbox = $showCheckbox
+        ? '<input class="post-checkbox" type="checkbox" name="delete_posts[]" value="' . $num . '" aria-label="Seleccionar publicación">'
+        : '';
 
     return '<div class="mobile mobile-post-info">'
+         . $checkbox
          . $postMenu
          . '<span class="name-block"><span style="color:' . $config['posternamecolor'] . ';font-weight:bold;padding-right: 5px;">' . $name . '</span>' . $subject . '</span>'
          . '<span class="mobile-date">' . htmlspecialchars($post['time']) . '<span class="mobile-number">'
@@ -1317,7 +1388,7 @@ function renderOP(array $post, array $allposts, bool $isthread, bool $summarize,
     }
     $comment   = formatComment($comment, $allposts);
     $imageHtml = renderImageBlock($post, true, $config);
-    $mobileInfo = renderMobilePostInfo($post, (int)$post['num'], true, $config, $adminView);
+    $mobileInfo = renderMobilePostInfo($post, (int)$post['num'], true, $config, $showCheckbox, $adminView);
     $replyLink = !$isthread
         ? ' [<a href="' . threadUrl((int)$post['num']) . '">Responder</a>]' : '';
     $replyCount = count(array_filter($allposts, fn($p) => (int)$p['parent'] === (int)$post['num']));
@@ -1368,7 +1439,7 @@ function renderReply(array $post, array $allposts, bool $summarize, array $confi
     }
     $comment   = formatComment($comment, $allposts);
     $imageHtml = renderImageBlock($post, false, $config);
-    $mobileInfo = renderMobilePostInfo($post, (int)$post['parent'], false, $config, $adminView);
+    $mobileInfo = renderMobilePostInfo($post, (int)$post['parent'], false, $config, $showCheckbox, $adminView);
     $checkbox = $showCheckbox
         ? ' <input class="post-checkbox" type="checkbox" name="delete_posts[]" value="' . $post['num'] . '" aria-label="Seleccionar publicación">'
         : '';
@@ -1513,7 +1584,7 @@ function generateIndex(array $allposts, array $config): string {
 <a href="' . threadUrl($thread) . '#p' . $img['num'] . '">
 <img src="' . siteUrl($config['uploadfolder'] . $img['image']) . '" style="width:120px;height:120px;object-fit:cover;border:1px solid #800;" alt="imagen">
 </a>
-<div style="font-size:10pt;"><a href="' . threadUrl($thread) . '#p' . $img['num'] . '">>>' . $img['num'] . '</a></div>
+<div style="font-size:.9rem"><a href="' . threadUrl($thread) . '#p' . $img['num'] . '">>>' . $img['num'] . '</a></div>
 </div>';
         }
         $gallery = '<div style="background:#fff;margin:1em 0;border:1px solid #800;">
@@ -1526,7 +1597,7 @@ function generateIndex(array $allposts, array $config): string {
     $totalSize   = array_sum(array_map(fn($p) => (int)$p['filesize'], $allposts));
     $stats = '<div style="background:#fff;margin:1em 0;border:1px solid #800;">
 <h3 style="margin:0 0 10px;padding:3px 10px;background:' . $config['section'] . ';">Estadísticas</h3>
-<div style="font-size:11pt;padding:0 0 10px 10px;display:flex;flex-wrap:wrap;justify-content:center;gap:15px;text-align:center;">
+<div style="font-size:.9rem;padding:0 0 10px 10px;display:flex;flex-wrap:wrap;justify-content:center;gap:15px;text-align:center;">
 <span><b>Publicaciones:</b> ' . $totalPosts . '</span>
 <span><b>Imágenes:</b> ' . $totalImages . '</span>
 <span><b>Contenido:</b> ' . formatBytes($totalSize) . '</span>
@@ -1549,32 +1620,47 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
     $subtitle = $config['subtitle'];
 
     $namefield = $config['forcedanonymity']
-        ? '<input type="text" name="name" size="28" value="' . $config['defaultname'] . '" disabled autocomplete="off">'
-        : '<input type="text" name="name" size="28" autocomplete="off">';
+        ? '<input type="text" name="name" size="28" value="' . $config['defaultname'] . '" disabled autocomplete="off" placeholder="Nombre">'
+        : '<input type="text" name="name" size="28" autocomplete="off" placeholder="Nombre">';
 
     // Formulario sin bloque de ayuda de formato bajo el textarea
     $formhtml = '<center>
 <h3 style="margin:.5em 0;">Crear nuevo hilo</h3>
-<form method="POST" action="' . siteUrl($config['tenmafile']) . '" enctype="multipart/form-data" style="margin-bottom:10px;">
-<table style="margin:0 auto;border-spacing:1px;"><tbody>
-<tr>
-  <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;"><b style="margin:.3em;">Nombre</b></td>
-  <td>' . $namefield . ' <input type="submit" value="Publicar" style="padding:.15em .3em"></td>
-</tr>
-<tr>
-  <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;"><b style="margin:.3em;">Asunto</b></td>
-  <td><input type="text" name="subject" size="28" maxlength="' . $config['subjectlimit'] . '" autocomplete="off" required></td>
-</tr>
-<tr>
-  <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;"><b style="margin:.3em;">Comentario</b></td>
-  <td><textarea name="com" cols="48" rows="4" style="vertical-align:bottom" autocomplete="off" required></textarea></td>
-</tr>
-<tr>
-  <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;"><b style="margin:.3em;">Imagen</b></td>
-  <td><input type="file" name="image" accept="image/*" autocomplete="off" required> <small>(Máx 3MB)</small></td>
-</tr>
-</tbody></table>
-<p style="font-size:9pt;">Puedes leer las <a href="' . siteUrl($config['rulesfile']) . '">reglas</a> y la <a href="' . siteUrl($config['helpfile']) . '">ayuda de formato</a>.</p>
+<form class="post-form" method="POST" action="' . siteUrl($config['tenmafile']) . '" enctype="multipart/form-data" style="margin-bottom:10px;">
+<table class="post-form-table" style="margin:0 auto;border-spacing:1px;">
+    <tbody>
+        <tr>
+            <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;">
+                <b style="margin:.3em;">Nombre</b></td>
+            <td>' . $namefield . ' <input type="submit" value="Publicar" style="padding:.15em .3em"></td>
+        </tr>
+        <tr>
+            <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;">
+                <b style="margin:.3em;">Asunto</b>
+            </td>
+            <td>
+                <input type="text" name="subject" size="28" maxlength="' . $config['subjectlimit'] . '" autocomplete="off" placeholder="Asunto" required>
+            </td>
+        </tr>
+        <tr>
+            <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;">
+                <b style="margin:.3em;">Comentario</b>
+            </td>
+            <td>
+                <textarea name="com" cols="48" rows="4" style="vertical-align:bottom" autocomplete="off" placeholder="Comentario" required></textarea>
+            </td>
+        </tr>
+        <tr>
+            <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;">
+                <b style="margin:.3em;">Imagen</b>
+            </td>
+            <td>
+                <input type="file" name="image" accept="image/*" autocomplete="off" required> <small>(Máx 3MB)</small>
+            </td>
+        </tr>
+    </tbody>
+</table>
+<p style="font-size:.9rem">Puedes leer las <a href="' . siteUrl($config['rulesfile']) . '">reglas</a> y la <a href="' . siteUrl($config['helpfile']) . '">ayuda de formato</a>.</p>
 </form></center><hr><br>';
 
     $posthtml = '';
@@ -1634,30 +1720,40 @@ function generateThread(array $thread, array $allposts, array $config): string {
     }
 
     $namefield = $config['forcedanonymity']
-        ? '<input type="text" name="name" size="28" value="' . $config['defaultname'] . '" disabled autocomplete="off">'
-        : '<input type="text" name="name" size="28" autocomplete="off">';
+        ? '<input type="text" name="name" size="28" value="' . $config['defaultname'] . '" disabled autocomplete="off" placeholder="Nombre">'
+        : '<input type="text" name="name" size="28" autocomplete="off" placeholder="Nombre">';
 
     // Formulario de respuesta sin bloque de ayuda bajo el textarea
     $replyForm = '<hr>
 <center>
 <h3 style="margin:.5em 0">Responder al hilo</h3>
-<form method="POST" action="' . siteUrl($config['tenmafile']) . '" enctype="multipart/form-data" style="margin:10px 0;">
+<form class="post-form" method="POST" action="' . siteUrl($config['tenmafile']) . '" enctype="multipart/form-data" style="margin:10px 0;">
 <input type="hidden" name="parent" value="' . $threadnum . '">
-<table style="margin:0 auto;border-spacing:1px;"><tbody>
-<tr>
-  <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;"><b style="margin:.3em;">Nombre</b></td>
-  <td>' . $namefield . ' <input type="submit" value="Responder" style="padding:.15em .3em"></td>
-</tr>
-<tr>
-  <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;"><b style="margin:.3em;">Comentario</b></td>
-  <td><textarea name="com" cols="48" rows="4" style="vertical-align:bottom" autocomplete="off"></textarea></td>
-</tr>
-<tr>
-  <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;"><b style="margin:.3em;">Imagen</b></td>
-  <td><input type="file" name="image" accept="image/*" autocomplete="off"> <small>(Máx 3MB)</small></td>
-</tr>
-</tbody></table>
-<p style="font-size:9pt;">Puedes leer las <a href="' . siteUrl($config['rulesfile']) . '">reglas</a> y la <a href="' . siteUrl($config['helpfile']) . '">ayuda de formato</a>.</p>
+<table class="post-form-table" style="margin:0 auto;border-spacing:1px;">
+    <tbody>
+        <tr>
+            <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;">
+                <b style="margin:.3em;">Nombre</b>
+            </td>
+            <td>' . $namefield . ' <input type="submit" value="Responder" style="padding:.15em .3em"></td>
+        </tr>
+            <tr>
+                <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;">
+                    <b style="margin:.3em;">Comentario</b>
+                </td>
+            <td>
+                <textarea name="com" cols="48" rows="4" style="vertical-align:bottom" autocomplete="off" placeholder="Comentario"></textarea>
+            </td>
+        </tr>
+        <tr>
+            <td style="background:' . $config['formsidecolor'] . ';border:1px solid ' . $config['border'] . ';padding:.1em;">
+                <b style="margin:.3em;">Imagen</b>
+            </td>
+            <td><input type="file" name="image" accept="image/*" autocomplete="off"> <small>(Máx 3MB)</small></td>
+        </tr>
+    </tbody>
+</table>
+<p style="font-size:.9rem">Puedes leer las <a href="' . siteUrl($config['rulesfile']) . '">reglas</a> y la <a href="' . siteUrl($config['helpfile']) . '">ayuda de formato</a>.</p>
 </form>
 </center>';
     $deleteForm = '<div class="delete"><button type="submit">Eliminar</button></div>';
@@ -1854,6 +1950,8 @@ if ($mode === 'manage') {
         }
 
         $page = (int)($_POST['page'] ?? 0);
+        $tab = $_POST['tab'] ?? 'posts';
+        $tab = is_string($tab) && in_array($tab, ['posts', 'reports', 'bans', 'settings'], true) ? $tab : 'posts';
 
         if (isset($_POST['logout'])) {
             // Revoca de inmediato TODAS las cookies de administrador emitidas
@@ -1873,12 +1971,12 @@ if ($mode === 'manage') {
         }
         if (isset($_POST['togglelock'])) {
             file_exists($config['lockfile']) ? unlink($config['lockfile']) : file_put_contents($config['lockfile'], 'locked');
-            header('Location: ' . $config['tenmafile'] . '?mode=manage');
+            header('Location: ' . siteUrl($config['tenmafile']) . '?mode=manage&tab=settings');
             exit;
         }
         if (isset($_POST['rebuild'])) {
             buildPages(readPosts($config), $config);
-            header('Location: ' . $config['tenmafile'] . '?mode=manage');
+            header('Location: ' . siteUrl($config['tenmafile']) . '?mode=manage&tab=settings');
             exit;
         }
         if (isset($_POST['delete'])) {
@@ -1892,18 +1990,39 @@ if ($mode === 'manage') {
             if ($hash !== '') addBan($config, $hash);
         }
         if (isset($_POST['ban']) && $_POST['ban'] !== '') {
-            addBan($config, (string)$_POST['ban']);
+            $durationOptions = ['3600' => 3600, '86400' => 86400, '604800' => 604800, '2592000' => 2592000, '0' => 0];
+            $duration = $_POST['ban_duration'] ?? '';
+            $hash = $_POST['ban'];
+            if (!is_string($duration) || !isset($durationOptions[$duration])
+                || !is_string($hash) || !preg_match('/\A[a-f0-9]{16}\z/i', $hash)) {
+                showError($config, 'La duración o el hash del baneo no son válidos.');
+            }
+            $expiresAt = $durationOptions[$duration] === 0 ? 0 : time() + $durationOptions[$duration];
+            addBan($config, $hash, $expiresAt);
+        }
+        if (isset($_POST['unban']) && $_POST['unban'] !== '') {
+            $hash = $_POST['unban'];
+            if (!is_string($hash) || !preg_match('/\A[a-f0-9]{16}\z/i', $hash)) {
+                showError($config, 'El hash del baneo no es válido.');
+            }
+            removeBan($config, $hash);
         }
         if (isset($_POST['dismiss_report'])) {
             deleteReport($config, (int)$_POST['dismiss_report']);
         }
 
         buildPages(readPosts($config), $config);
-        header('Location: ' . siteUrl($config['tenmafile']) . '?mode=manage&page=' . $page);
+        header('Location: ' . siteUrl($config['tenmafile']) . '?mode=manage&tab=' . rawurlencode($tab) . '&page=' . $page);
         exit;
     }
 
+    $tab = $_GET['tab'] ?? 'posts';
+    $tab = is_string($tab) && in_array($tab, ['posts', 'reports', 'bans', 'settings'], true) ? $tab : 'posts';
     $allpostsraw  = array_reverse(readPosts($config));
+    $postsByNum = [];
+    foreach ($allpostsraw as $post) {
+        $postsByNum[(int)$post['num']] = $post;
+    }
     $totalcount   = count($allpostsraw);
     $totalpages   = max(1, (int)ceil($totalcount / $config['postsperpage']));
     $pagenumber   = max(0, min((int)($_GET['page'] ?? 0), $totalpages - 1));
@@ -1917,7 +2036,31 @@ if ($mode === 'manage') {
         $content .= '<div style="background:#fff3cd;border:1px solid #e0a800;color:#7a5b00;padding:8px 12px;margin:10px 0;text-align:center;">Estás usando la contraseña de administrador por defecto.</div>';
     }
 
-    $content .= '<div class="admin-toolbar">
+    $reports = getReports($config);
+    $bans = getBans($config);
+    $content .= '<nav class="admin-tab-nav" aria-label="Secciones de administración">';
+    foreach ([
+        'posts' => 'Publicaciones',
+        'reports' => 'Reportes',
+        'bans' => 'Baneos',
+        'settings' => 'Ajustes',
+    ] as $tabValue => $tabLabel) {
+        $current = $tab === $tabValue ? ' aria-current="page"' : '';
+        $content .= '<form method="GET" action="' . siteUrl($config['tenmafile']) . '">
+<input type="hidden" name="mode" value="manage">
+<button type="submit" name="tab" value="' . $tabValue . '"' . $current . '>' . $tabLabel . '</button>
+</form>';
+    }
+    $content .= '<form method="POST" action="?mode=manage" onsubmit="return confirm(\'Esto cerrará todas las sesiones de administrador activas. ¿Continuar?\');">
+<input type="hidden" name="csrf_token" value="' . $csrfToken . '">
+<button type="submit" name="logout" value="1">Cerrar sesión</button>
+</form>
+</nav>';
+
+    if ($tab === 'settings') {
+        $content .= '<h2 style="text-align:center;margin:8px 0;">Ajustes</h2>
+<p style="text-align:center;margin:10px 0;">Estado de publicaciones: <b>' . (file_exists($config['lockfile']) ? 'Bloqueadas' : 'Abiertas') . '</b></p>
+<div class="admin-toolbar">
 <form method="POST" action="?mode=manage" style="display:inline;">
 <input type="hidden" name="csrf_token" value="' . $csrfToken . '">
 <button type="submit" name="togglelock" value="1" style="padding:.15em .3em">' . (file_exists($config['lockfile']) ? 'Desbloquear publicaciones' : 'Bloquear publicaciones') . '</button>
@@ -1927,17 +2070,15 @@ if ($mode === 'manage') {
 <input type="hidden" name="csrf_token" value="' . $csrfToken . '">
 <button type="submit" name="rebuild" value="1" style="padding:.15em .3em">Regenerar HTML</button>
 </form>
-&nbsp;
-<form method="POST" action="?mode=manage" style="display:inline;" onsubmit="return confirm(\'Esto cerrará todas las sesiones de administrador activas. ¿Continuar?\');">
-<input type="hidden" name="csrf_token" value="' . $csrfToken . '">
-<button type="submit" name="logout" value="1" style="padding:.15em .3em">Cerrar sesión</button>
-</form>
 </div>';
+    }
 
-    $reports = getReports($config);
-    if (!empty($reports)) {
-        $content .= '<hr><h3 style="text-align:center;margin-bottom:8px;">Reportes pendientes (' . count($reports) . ')</h3>
+    if ($tab === 'reports') {
+        $content .= '<h2 style="text-align:center;margin:8px 0;">Reportes pendientes (' . count($reports) . ')</h2>';
+        if (!empty($reports)) {
+            $content .= '
 <form method="POST" action="?mode=manage">
+<input type="hidden" name="tab" value="reports">
 <input type="hidden" name="page" value="' . $pagenumber . '">
 <input type="hidden" name="csrf_token" value="' . $csrfToken . '">
 <div class="report-grid">';
@@ -1945,47 +2086,99 @@ if ($mode === 'manage') {
             $rnum   = (int)$r['num'];
             $reason = htmlspecialchars(mb_substr($r['reason'], 0, 120));
             $rtime  = htmlspecialchars($r['time']);
-            $content .= '<div class="report-card">
-<div class="rc-num"><a href="' . threadUrl($rnum) . '#p' . $rnum . '" target="_blank">No.' . $rnum . '</a></div>
+            $content .= '<div class="report-card reported-post">
+<div class="rc-num">Reporte de No.' . $rnum . '</div>
 <div class="rc-reason">' . $reason . '</div>
 <div class="rc-time">' . $rtime . '</div>
 <div class="rc-actions">
   <button type="submit" name="dismiss_report" value="' . $r['id'] . '">Descartar</button>
   <button type="submit" name="delete" value="' . $rnum . '">Eliminar</button>
 </div>
+<div class="reported-publication">';
+            if (isset($postsByNum[$rnum])) {
+                $reportedPost = $postsByNum[$rnum];
+                $content .= (int)$reportedPost['parent'] > 0
+                    ? renderReply($reportedPost, $allpostsraw, false, $config, false, true)
+                    : renderOP($reportedPost, $allpostsraw, false, false, $config, false, true);
+            } else {
+                $content .= '<p class="error-message">La publicación reportada ya no está disponible.</p>';
+            }
+            $content .= '</div></div>';
+        }
+        $content .= '</div></form>';
+        } else {
+            $content .= '<p style="text-align:center;margin:10px 0;">No hay reportes pendientes.</p>';
+        }
+    }
+
+    if ($tab === 'bans') {
+        $content .= '<h2 style="text-align:center;margin:8px 0;">Baneos registrados (' . count($bans) . ')</h2>';
+        if (!empty($bans)) {
+            $content .= '<form method="POST" action="?mode=manage">
+<input type="hidden" name="tab" value="bans">
+<input type="hidden" name="page" value="' . $pagenumber . '">
+<input type="hidden" name="csrf_token" value="' . $csrfToken . '">
+<div class="report-grid">';
+        foreach ($bans as $ban) {
+            $banHash = (string)$ban['hash'];
+            $expiresAt = (int)$ban['expires_at'];
+            if ($expiresAt === 0) {
+                $banStatus = 'Permanente';
+            } elseif ($expiresAt <= time()) {
+                $banStatus = 'Vencido el ' . date('Y-m-d H:i:s', $expiresAt);
+            } else {
+                $banStatus = 'Hasta el ' . date('Y-m-d H:i:s', $expiresAt);
+            }
+            $content .= '<div class="report-card">
+<div class="rc-num">Hash: ' . htmlspecialchars($banHash, ENT_QUOTES, 'UTF-8') . '</div>
+<div class="rc-time">' . htmlspecialchars($banStatus, ENT_QUOTES, 'UTF-8') . '</div>
+<div class="rc-actions"><button type="submit" name="unban" value="' . htmlspecialchars($banHash, ENT_QUOTES, 'UTF-8') . '">Quitar baneo</button></div>
 </div>';
         }
         $content .= '</div></form>';
+        } else {
+            $content .= '<p style="text-align:center;margin:10px 0;">No hay baneos registrados.</p>';
+        }
     }
 
-    $content .= '<hr><form method="POST" action="?mode=manage">
+    if ($tab === 'posts') {
+        $content .= '<form method="POST" action="?mode=manage">
+<input type="hidden" name="tab" value="posts">
 <input type="hidden" name="page" value="' . $pagenumber . '">
 <input type="hidden" name="csrf_token" value="' . $csrfToken . '">
 <div class="admin-post-list">';
 
-    foreach ($pageposts as $p) {
-        $num = (int)$p['num'];
-        $hash = (string)$p['postiphash'];
-        $postHtml = (int)$p['parent'] > 0
-            ? renderReply($p, $allpostsraw, true, $config, false, true)
-            : renderOP($p, $allpostsraw, false, true, $config, false, true);
+        foreach ($pageposts as $p) {
+            $num = (int)$p['num'];
+            $hash = (string)$p['postiphash'];
+            $postHtml = (int)$p['parent'] > 0
+                ? renderReply($p, $allpostsraw, true, $config, false, true)
+                : renderOP($p, $allpostsraw, false, true, $config, false, true);
 
-        $content .= '<div class="admin-post-entry">'
-            . $postHtml
-            . '<div class="admin-post-controls"><span class="admin-post-hash">ID: '
-            . htmlspecialchars($hash, ENT_QUOTES, 'UTF-8') . '</span><div class="admin-post-actions">';
-        if ((int)$p['deleted'] > 0) {
-            $content .= '<i>Eliminado</i>';
-        } else {
-            $content .= '<button type="submit" name="delete" value="' . $num . '">Eliminar</button>';
+            $content .= '<div class="admin-post-entry">'
+                . $postHtml
+                . '<div class="admin-post-controls"><span class="admin-post-hash">ID: '
+                . htmlspecialchars($hash, ENT_QUOTES, 'UTF-8') . '</span><div class="admin-post-actions">';
+            if ((int)$p['deleted'] > 0) {
+                $content .= '<i>Eliminado</i>';
+            } else {
+                $content .= '<button type="submit" name="delete" value="' . $num . '">Eliminar</button>';
+            }
+            $content .= '<label>Duración del baneo: <select name="ban_duration">
+<option value="3600">1 hora</option>
+<option value="86400">1 día</option>
+<option value="604800">7 días</option>
+<option value="2592000">30 días</option>
+<option value="0">Permanente</option>
+</select></label>
+<button type="submit" name="ban" value="' . htmlspecialchars($hash, ENT_QUOTES, 'UTF-8') . '">Banear IP</button>'
+                . '</div></div><hr style="clear:both;">'
+                . '</div>';
         }
-        $content .= '<button type="submit" name="ban" value="' . htmlspecialchars($hash, ENT_QUOTES, 'UTF-8') . '">Ban IP</button>'
-            . '</div></div><hr style="clear:both;">'
-            . '</div>';
-    }
 
-    $content .= '</div></form>';
-    $content .= paginationHtml($pagenumber, $totalpages, 'manage', $config);
+        $content .= '</div></form>';
+        $content .= paginationHtml($pagenumber, $totalpages, 'manage', $config, 'tab=posts');
+    }
 
     echo renderPage($title, $content, $config, ['index.html' => 'Inicio']);
     exit;

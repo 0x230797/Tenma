@@ -81,7 +81,7 @@ echo password_hash('tu-contraseña-nueva', PASSWORD_DEFAULT);
 
 Sustituye el valor de `adminpasswordhash` en `$config` por el hash generado. El panel muestra un aviso mientras detecta la contraseña predeterminada. Incluye limitación de intentos de inicio de sesión y protección CSRF para las acciones administrativas.
 
-Desde el panel puedes bloquear temporalmente las publicaciones, gestionar reportes, eliminar publicaciones, banear hashes de IP, regenerar los archivos estáticos y cerrar la sesión de administración. Al regenerar las páginas también se actualizan los recursos estáticos `style.css` y `tenma.js`.
+Desde el panel puedes bloquear temporalmente las publicaciones, consultar y gestionar los reportes pendientes, revisar y quitar baneos, eliminar publicaciones, regenerar los archivos estáticos y cerrar la sesión de administración. Al banear una IP puedes elegir entre 1 hora, 1 día, 7 días, 30 días o un baneo permanente. Los baneos permanentes existentes se conservan al actualizar el esquema de la base de datos.
 
 ## Seguridad y datos
 
