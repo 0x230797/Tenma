@@ -8,8 +8,11 @@ Tenma es un tablón anónimo de discusión inspirado en los *imageboards*. Está
 - Citar publicaciones con `>>123`; los enlaces llevan al post y lo resaltan brevemente para encontrarlo con facilidad.
 - Formato de texto: greentext (`>texto`), pinktext (`<texto`), negrita (`**texto**`), cursiva (`~texto~`) y subrayado (`_texto_`).
 - Interfaz adaptable a escritorio y móvil, con actividad reciente, galería de imágenes y estadísticas.
+- Noticias publicadas desde el panel de administración y mostradas en la página principal.
+- Aviso importante configurable desde administración, mostrado en rojo y centrado en el tablón cuando está activado y contiene texto.
 - Ocultar publicaciones en el navegador, reportar publicaciones y eliminar las propias.
-- Panel de administración para revisar reportes, eliminar publicaciones, banear, bloquear publicaciones, regenerar las páginas y cerrar la sesión.
+- Panel de administración para revisar reportes, eliminar publicaciones, banear, bloquear hilos, fijarlos en la parte superior, regenerar las páginas y cerrar la sesión.
+- Las publicaciones hechas con la sesión de administración muestran «Administrador» en rojo junto a su distintivo.
 - Imágenes JPG, PNG, GIF y WEBP de hasta 3 MB.
 - Páginas estáticas y URLs amigables para los hilos: `/threads/<id>/`.
 - Reglas de reescritura y protecciones de acceso generadas en archivos `.htaccess`.
@@ -62,7 +65,7 @@ Solo se confía en cabeceras como `CF-Connecting-IP` y `X-Forwarded-For` cuando 
 
 ## Uso
 
-- `index.html` muestra la actividad reciente, las imágenes y las estadísticas.
+- `index.html` muestra las noticias, la actividad reciente, el tablón, las imágenes y las estadísticas.
 - `board.html` muestra los hilos; las páginas siguientes usan nombres como `board-1.html`.
 - Para abrir un hilo, usa `/threads/<id>/`. Las URLs antiguas `/thread-<id>.html` se redirigen a la ruta nueva.
 - En la ayuda del sitio se muestran los formatos de texto admitidos. Al seguir un enlace de cita, el post de destino se resalta temporalmente.
@@ -81,7 +84,7 @@ echo password_hash('tu-contraseña-nueva', PASSWORD_DEFAULT);
 
 Sustituye el valor de `adminpasswordhash` en `$config` por el hash generado. El panel muestra un aviso mientras detecta la contraseña predeterminada. Incluye limitación de intentos de inicio de sesión y protección CSRF para las acciones administrativas.
 
-Desde el panel puedes bloquear temporalmente las publicaciones, consultar y gestionar los reportes pendientes, revisar y quitar baneos, eliminar publicaciones, regenerar los archivos estáticos y cerrar la sesión de administración. Al banear una IP puedes elegir entre 1 hora, 1 día, 7 días, 30 días o un baneo permanente. Los baneos permanentes existentes se conservan al actualizar el esquema de la base de datos.
+Desde el panel puedes publicar y eliminar noticias, configurar y activar un aviso importante para el tablón, bloquear temporalmente las publicaciones, bloquear hilos para impedir nuevas respuestas, fijar hilos en la parte superior, consultar y gestionar los reportes pendientes, revisar y quitar baneos, eliminar publicaciones, regenerar los archivos estáticos y cerrar la sesión de administración. Los controles de bloquear y fijar aparecen solo en publicaciones iniciales de hilos. El contenido de las noticias admite saltos de línea, texto en negritas con `**texto**` y enlaces http(s). Al banear una IP puedes elegir entre 1 hora, 1 día, 7 días, 30 días o un baneo permanente. Los baneos permanentes existentes se conservan al actualizar el esquema de la base de datos.
 
 ## Seguridad y datos
 
@@ -97,7 +100,7 @@ Desde el panel puedes bloquear temporalmente las publicaciones, consultar y gest
 - `board.html`, `board-<n>.html`: páginas del tablón.
 - `threads/thread-<id>.html`: archivo estático de cada hilo, servido normalmente mediante `/threads/<id>/`.
 - `rules.html`, `help.html` y `error.html`: reglas, ayuda y página de error 404.
-- `style.css`, `tenma.js`, `favicon.ico`, `robots.txt` y `sitemap.xml`: recursos del sitio.
+- `style.css`, `tenma.js`, `favicon.ico`, `admin.gif`, `thread-lock.gif`, `thread-pin.gif`, `robots.txt` y `sitemap.xml`: recursos del sitio.
 - `.htaccess` y reglas `.htaccess` dentro de `database/` y `threads/`: reescritura y controles de acceso.
 
 Las páginas y recursos se regeneran al publicar, moderar o usar la acción correspondiente en el panel. Si actualizas el código y necesitas actualizar las páginas ya generadas, inicia sesión en administración y pulsa **Regenerar HTML**.
