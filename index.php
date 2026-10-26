@@ -151,14 +151,27 @@ function isHttps(array $config): bool {
  * Comprueba si una IP pertenece a un rango CIDR (IPv4 o IPv6).
  */
 function ipMatchesCidr(string $ip, string $cidr): bool {
-    if (strpos($cidr, '/') === false) {
-        return $ip === $cidr;
-    }
-    [$subnet, $bits] = explode('/', $cidr, 2);
-    $bits = (int)$bits;
     $ipBin     = @inet_pton($ip);
+    if ($ipBin === false) {
+        return false;
+    }
+
+    if (strpos($cidr, '/') === false) {
+        $subnetBin = @inet_pton($cidr);
+        return $subnetBin !== false && strlen($ipBin) === strlen($subnetBin) && $ipBin === $subnetBin;
+    }
+
+    [$subnet, $bits] = explode('/', $cidr, 2);
+    if ($subnet === '' || !ctype_digit($bits)) {
+        return false;
+    }
     $subnetBin = @inet_pton($subnet);
-    if ($ipBin === false || $subnetBin === false || strlen($ipBin) !== strlen($subnetBin)) {
+    if ($subnetBin === false || strlen($ipBin) !== strlen($subnetBin)) {
+        return false;
+    }
+
+    $bits = (int)$bits;
+    if ($bits > strlen($ipBin) * 8) {
         return false;
     }
     $bytes      = intdiv($bits, 8);
@@ -179,8 +192,12 @@ function ipMatchesCidr(string $ip, string $cidr): bool {
  * Indica si una IP de origen está en la lista de proxies inversos de confianza.
  */
 function isTrustedProxy(string $remoteAddr, array $config): bool {
-    foreach ($config['trustedproxies'] ?? [] as $cidr) {
-        if (ipMatchesCidr($remoteAddr, $cidr)) return true;
+    $trustedProxies = $config['trustedproxies'] ?? [];
+    if (!is_array($trustedProxies)) {
+        return false;
+    }
+    foreach ($trustedProxies as $cidr) {
+        if (is_string($cidr) && ipMatchesCidr($remoteAddr, $cidr)) return true;
     }
     return false;
 }
@@ -218,14 +235,43 @@ function ipHashSecret(array $config): string {
 
     $path = rtrim($config['databasefolder'], '/') . '/iphash.secret';
     if (!is_dir(dirname($path))) {
-        mkdir(dirname($path), 0755, true);
+        if (!mkdir(dirname($path), 0755, true) && !is_dir(dirname($path))) {
+            throw new RuntimeException('No se pudo crear el directorio del secreto de IP.');
+        }
     }
-    if (!file_exists($path)) {
-        file_put_contents($path, bin2hex(random_bytes(32)));
-        @chmod($path, 0600);
+
+    $lock = fopen($path . '.lock', 'c');
+    if ($lock === false) {
+        throw new RuntimeException('No se pudo abrir el bloqueo del secreto de IP.');
     }
-    $secret = (string)file_get_contents($path);
+    if (!flock($lock, LOCK_EX)) {
+        fclose($lock);
+        throw new RuntimeException('No se pudo bloquear el secreto de IP.');
+    }
+
+    try {
+        if (!file_exists($path)) {
+            $newSecret = bin2hex(random_bytes(32));
+            if (file_put_contents($path, $newSecret, LOCK_EX) !== strlen($newSecret)) {
+                throw new RuntimeException('No se pudo guardar el secreto de IP.');
+            }
+            @chmod($path, 0600);
+        }
+
+        $secret = file_get_contents($path);
+        if ($secret === false || !preg_match('/\A[a-f0-9]{64}\z/', $secret)) {
+            throw new RuntimeException('El secreto de IP no se pudo leer o no tiene un formato válido.');
+        }
+    } finally {
+        flock($lock, LOCK_UN);
+        fclose($lock);
+    }
+
     return $secret;
+}
+
+function matchesClientIpHash(string $storedHash, string $currentHash, string $legacyHash): bool {
+    return hash_equals($storedHash, $currentHash) || hash_equals($storedHash, $legacyHash);
 }
 
 // ===== INICIALIZACIÓN =====
@@ -645,21 +691,16 @@ function checkLoginRateLimit(array $config, string $hash): void {
  * Registra un intento fallido de acceso al panel de administración.
  */
 function registerFailedLogin(array $config, string $hash): void {
-    $pdo  = getPDO($config);
-    $stmt = $pdo->prepare('SELECT attempts, lastattempt FROM login_attempts WHERE hash = :hash');
-    $stmt->execute(['hash' => $hash]);
-    $row  = $stmt->fetch(PDO::FETCH_ASSOC);
-    $now  = time();
-
-    if (!$row) {
-        $pdo->prepare('INSERT INTO login_attempts (hash, attempts, lastattempt) VALUES (:hash, 1, :now)')
-            ->execute(['hash' => $hash, 'now' => $now]);
-        return;
-    }
-
-    $attempts = ($now - (int)$row['lastattempt']) > LOGIN_LOCKOUT_SECS ? 1 : (int)$row['attempts'] + 1;
-    $pdo->prepare('UPDATE login_attempts SET attempts = :attempts, lastattempt = :now WHERE hash = :hash')
-        ->execute(['attempts' => $attempts, 'now' => $now, 'hash' => $hash]);
+    $now = time();
+    getPDO($config)->prepare('INSERT INTO login_attempts (hash, attempts, lastattempt)
+        VALUES (:hash, 1, :now)
+        ON CONFLICT(hash) DO UPDATE SET
+            attempts = CASE
+                WHEN excluded.lastattempt - login_attempts.lastattempt > ' . LOGIN_LOCKOUT_SECS . ' THEN 1
+                ELSE login_attempts.attempts + 1
+            END,
+            lastattempt = excluded.lastattempt')
+        ->execute(['hash' => $hash, 'now' => $now]);
 }
 
 /**
@@ -669,17 +710,44 @@ function clearLoginAttempts(array $config, string $hash): void {
     getPDO($config)->prepare('DELETE FROM login_attempts WHERE hash = :hash')->execute(['hash' => $hash]);
 }
 
-function isBanned(array $config, string $hash, string $legacyHash = ''): bool {
+function getActiveBanExpiration(array $config, string $hash, string $legacyHash = ''): ?int {
     if ($legacyHash !== '') {
-        $stmt = getPDO($config)->prepare('SELECT 1 FROM bans
-            WHERE (hash = :hash OR hash = :legacy) AND (expires_at = 0 OR expires_at > :now)');
+        $stmt = getPDO($config)->prepare('SELECT expires_at FROM bans
+            WHERE (hash = :hash OR hash = :legacy) AND (expires_at = 0 OR expires_at > :now)
+            ORDER BY CASE WHEN expires_at = 0 THEN 0 ELSE 1 END, expires_at DESC LIMIT 1');
         $stmt->execute(['hash' => $hash, 'legacy' => $legacyHash, 'now' => time()]);
-        return (bool)$stmt->fetchColumn();
+    } else {
+        $stmt = getPDO($config)->prepare('SELECT expires_at FROM bans
+            WHERE hash = :hash AND (expires_at = 0 OR expires_at > :now)');
+        $stmt->execute(['hash' => $hash, 'now' => time()]);
     }
-    $stmt = getPDO($config)->prepare('SELECT 1 FROM bans
-        WHERE hash = :hash AND (expires_at = 0 OR expires_at > :now)');
-    $stmt->execute(['hash' => $hash, 'now' => time()]);
-    return (bool)$stmt->fetchColumn();
+    $expiresAt = $stmt->fetchColumn();
+    return $expiresAt === false ? null : (int)$expiresAt;
+}
+
+function formatBanTimeRemaining(int $seconds): string {
+    if ($seconds < 60) {
+        return 'menos de un minuto';
+    }
+
+    $units = [
+        'día' => 86400,
+        'hora' => 3600,
+        'minuto' => 60,
+    ];
+    $parts = [];
+    foreach ($units as $unit => $unitSeconds) {
+        $amount = intdiv($seconds, $unitSeconds);
+        if ($amount > 0) {
+            $parts[] = $amount . ' ' . $unit . ($amount === 1 ? '' : 's');
+            $seconds %= $unitSeconds;
+        }
+        if (count($parts) === 2) {
+            break;
+        }
+    }
+
+    return implode(' y ', $parts);
 }
 
 /**
@@ -746,13 +814,36 @@ function adminSessionSecret(array $config): string {
 
     $path = rtrim($config['databasefolder'], '/') . '/admin.secret';
     if (!is_dir(dirname($path))) {
-        mkdir(dirname($path), 0755, true);
+        if (!mkdir(dirname($path), 0755, true) && !is_dir(dirname($path))) {
+            throw new RuntimeException('No se pudo crear el directorio del secreto de administración.');
+        }
     }
-    if (!file_exists($path)) {
-        file_put_contents($path, bin2hex(random_bytes(32)));
-        @chmod($path, 0600);
+    $lock = fopen($path . '.lock', 'c');
+    if ($lock === false) {
+        throw new RuntimeException('No se pudo abrir el bloqueo del secreto de administración.');
     }
-    $secret = (string)file_get_contents($path);
+    if (!flock($lock, LOCK_EX)) {
+        fclose($lock);
+        throw new RuntimeException('No se pudo bloquear el secreto de administración.');
+    }
+
+    try {
+        if (!file_exists($path)) {
+            $newSecret = bin2hex(random_bytes(32));
+            if (file_put_contents($path, $newSecret, LOCK_EX) !== strlen($newSecret)) {
+                throw new RuntimeException('No se pudo guardar el secreto de administración.');
+            }
+            @chmod($path, 0600);
+        }
+        $secret = file_get_contents($path);
+        if ($secret === false || !preg_match('/\A[a-f0-9]{64}\z/', $secret)) {
+            throw new RuntimeException('El secreto de administración no se pudo leer o no tiene un formato válido.');
+        }
+    } finally {
+        flock($lock, LOCK_UN);
+        fclose($lock);
+    }
+
     return $secret;
 }
 
@@ -762,8 +853,25 @@ function adminSessionSecret(array $config): string {
  */
 function rotateAdminSessionSecret(array $config): void {
     $path = rtrim($config['databasefolder'], '/') . '/admin.secret';
-    file_put_contents($path, bin2hex(random_bytes(32)));
-    @chmod($path, 0600);
+    $lock = fopen($path . '.lock', 'c');
+    if ($lock === false) {
+        throw new RuntimeException('No se pudo abrir el bloqueo del secreto de administración.');
+    }
+    if (!flock($lock, LOCK_EX)) {
+        fclose($lock);
+        throw new RuntimeException('No se pudo bloquear el secreto de administración.');
+    }
+
+    try {
+        $newSecret = bin2hex(random_bytes(32));
+        if (file_put_contents($path, $newSecret, LOCK_EX) !== strlen($newSecret)) {
+            throw new RuntimeException('No se pudo renovar el secreto de administración.');
+        }
+        @chmod($path, 0600);
+    } finally {
+        flock($lock, LOCK_UN);
+        fclose($lock);
+    }
 }
 
 /**
@@ -793,14 +901,19 @@ function generateAdminCsrfToken(array $config): string {
     return $_SESSION['tenma_admin_csrf'];
 }
 
-function verifyAdminCsrfToken(array $config, string $token): bool {
+function verifyAdminCsrfToken(array $config, $token): bool {
     startAdminSession($config);
 
-    return hash_equals($_SESSION['tenma_admin_csrf'] ?? '', $token);
+    $expected = $_SESSION['tenma_admin_csrf'] ?? '';
+    return is_string($expected) && is_string($token) && $expected !== '' && hash_equals($expected, $token);
 }
 
-if (isBanned($config, $hashedip, $legacyhashedip)) {
-    showError($config, 'Estás baneado de este tablón.');
+$banExpiresAt = getActiveBanExpiration($config, $hashedip, $legacyhashedip);
+if ($banExpiresAt !== null) {
+    $banMessage = $banExpiresAt === 0
+        ? '<h3>Estás baneado de este tablón.</h3><br><h4>Tu baneo es permanente.</h4>'
+        : '<h3>Estás baneado temporalmente de este tablón.</h3><br><h4>Tiempo restante: ' . formatBanTimeRemaining($banExpiresAt - time()) . '.</h4>';
+    showError($config, $banMessage);
 }
 
 $staticPage = $_GET['static'] ?? '';
@@ -876,7 +989,7 @@ function relativeTime(int $timestamp): string {
 /**
  * Muestra una página de error simple y termina la ejecución.
  */
-function showError(array $config, string $message): never {
+function showError(array $config, string $message): void {
     $title    = htmlspecialchars($config['title']);
     $homeUrl  = siteUrl('index.html');
 
@@ -886,7 +999,7 @@ function showError(array $config, string $message): never {
         <div style="text-align:center;margin:0 0 10px">
             <span class="error-message">$message</span>
             <br>
-            [<a href="$homeUrl">Volver</a>]
+            [<a href="$homeUrl">Inicio</a>]
         </div>
     </div>
 HTML;
@@ -1069,6 +1182,7 @@ function generateStyles(array $config): string {
     * { margin: 0; padding: 0; box-sizing: border-box; overflow-wrap: break-word; word-wrap: break-word }
     body { font-family: var(--font-family); color: var(--text-color); padding: 10px; background: linear-gradient(to bottom, var(--gradient-color) 0, var(--background-color) 190px) no-repeat; background-color: var(--background-color); overflow-x: hidden }
     button, input, select, textarea { font-size: 1rem }
+    button { padding: 0 .3em }
     hr { border: none; opacity: .3; border-top: 1px solid var(--text-color) }
     ul { list-style-type: none; margin: 1em; padding: 0 }
     .error-message { color: var(--error-text-color); font-weight: bold }
@@ -1088,6 +1202,8 @@ function generateStyles(array $config): string {
     /* ===== Formularios ===== */
     input[type=text], input[type=password], textarea { font-family:sans-serif; padding:.2em; border: 1px solid var(--border-color) }
     .post-form ::placeholder { opacity: 0 }
+    .post-form-toggle { padding: 0; border: 0; background: none; color: #0000EE; font: inherit; font-weight: bold; cursor: pointer }
+    .post-form-toggle:hover { color: var(--link-hover-color) }
 
     /* ===== Publicaciones ===== */
     .fileinfo  { font-size: .92rem; margin-bottom: 5px }
@@ -1148,11 +1264,12 @@ function generateStyles(array $config): string {
 
     /* ===== Reportes (panel de administración) ===== */
     .report-grid { display: flex; flex-wrap: wrap; gap: 10px; padding-bottom: 10px }
+    .report-grid > form { flex: 1 1 100%; min-width: 0; margin: 0 }
     .report-card { background: var(--report-card-background); border: 1px solid var(--report-card-border); padding: 10px 14px; min-width: 260px; flex: 1 1 260px }
     .reported-post { flex: 1 1 100%; min-width: 0 }
     .reported-publication { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--report-card-border) }
     .report-card .rc-num  { font-weight: bold; font-size: .97rem; color: var(--post-subject-color) }
-    .report-card .rc-reason { margin: 4px 0 8px; font-size: .75rem }
+    .report-card .rc-reason { margin: 4px 0 8px; }
     .report-card .rc-time { font-size: .8125rem; color: var(--muted-text-color); margin-bottom: 8px }
     .report-card .rc-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
     .report-card .rc-actions button { cursor: pointer }
@@ -1177,20 +1294,19 @@ function generateStyles(array $config): string {
     .admin-section { margin: 10px 0 16px }
     .admin-section-title { margin: 8px 0; text-align: center }
     .admin-button-group { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 8px 0 }
-    .admin-toolbar { justify-content: center }
+    .admin-toolbar { justify-content: flex-start }
     .admin-toolbar form { margin: 0 }
     .admin-settings-block { margin: 10px 0 }
-    .admin-settings-block h3 { margin: 8px 0; text-align: center }
-    .admin-notice-toggle { display: block; margin: 8px 0; text-align: center }
-    .admin-notice-input { display: block; width: calc(100% - 16px); max-width: 600px; margin: 8px auto; resize: vertical }
-    .admin-settings-submit { justify-content: center }
-    .admin-status { margin-top: 12px; text-align: center }
+    .admin-settings-block h3 { margin: 8px 0; }
+    .admin-notice-toggle { display: block; margin: 8px 0; }
+    .admin-notice-input { display: block; width: calc(100% - 16px); max-width: 600px; resize: vertical }
+    .admin-settings-submit { justify-content: flex-start }
+    .admin-status { margin-top: 12px; }
     .admin-status p { margin: 10px 0 }
     .admin-post-entry { padding: 5px 0 }
     .admin-post-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: .9rem }
     .admin-post-hash { color: var(--muted-text-color); overflow-wrap: anywhere }
     .admin-post-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px }
-    .admin-post-actions button { padding: 0 .3em }
     .admin-post-actions .thread-admin-action { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap }
 
     /* ===== Responsive (móvil) ===== */
@@ -1253,6 +1369,19 @@ function generateStyles(array $config): string {
  */
 function generateScript(): string {
     return <<<'JS'
+    document.addEventListener('click', function(event) {
+        var toggle = event.target.closest('.post-form-toggle');
+        if (!toggle) return;
+
+        var formContainer = document.getElementById(toggle.getAttribute('aria-controls'));
+        if (!formContainer) return;
+
+        var isExpanded = toggle.getAttribute('aria-expanded') === 'true';
+        toggle.setAttribute('aria-expanded', String(!isExpanded));
+        formContainer.hidden = isExpanded;
+        toggle.closest('h3').hidden = !isExpanded;
+    });
+
     function quotePost(num) {
         var allTextareas = document.querySelectorAll('textarea[name="com"]');
 
@@ -1475,7 +1604,7 @@ function renderPostAuthor(array $post, array $config): string {
         return '<span style="color:' . $config['posternamecolor'] . ';font-weight:bold;">' . $name . '</span>';
     }
     return '<span style="color:#f00;font-weight:bold;">' . $name . '</span> '
-        . '<img src="' . siteUrl('admin.gif') . '" alt="Administrador" title="Administrador" width="16" height="16" style="vertical-align:middle;">';
+        . '<img src="' . siteUrl('admin.gif') . '" alt="Administrador" title="Administrador" width="16" height="16" style="vertical-align:top;">';
 }
 
 function renderPostBacklinks(array $post, array $allposts): string {
@@ -1537,7 +1666,7 @@ function renderMobilePostInfo(array $post, array $allposts, int $threadnum, bool
 function renderPostMenu(array $post, int $threadnum, array $config): string {
     $num       = (int)$post['num'];
     $reportUrl = siteUrl($config['tenmafile']) . '?mode=report&num=' . $num;
-    $reportLink = !empty($post['pinned']) || !empty($post['locked']) || !empty($post['author_admin'])
+    $reportLink = !empty($post['deleted']) || !empty($post['pinned']) || !empty($post['locked']) || !empty($post['author_admin'])
         ? ''
         : '<a href="' . htmlspecialchars($reportUrl, ENT_QUOTES, 'UTF-8') . '">Reportar</a>';
     $menu      = '<details class="post-menu"><summary title="Más acciones"></summary><div class="post-menu-content">'
@@ -1842,8 +1971,10 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
 
     // Formulario sin bloque de ayuda de formato bajo el textarea
     $formhtml = '<center>
-<h3 style="margin:.5em 0;">Crear nueva publicación</h3>
-<form class="post-form" method="POST" action="' . siteUrl($config['tenmafile']) . '" enctype="multipart/form-data" style="margin-bottom:10px;">
+<h3 style="margin:.5em 0; font-size: 1.5em;">[<button class="post-form-toggle" type="button" aria-controls="new-thread-form" aria-expanded="false">Crear nueva publicación</button>]</h3>
+<div id="new-thread-form" hidden>
+<br>
+<form class="post-form" method="POST" action="' . siteUrl($config['tenmafile']) . '" enctype="multipart/form-data">
 <table class="post-form-table" style="margin:0 auto;border-spacing:1px;">
     <tbody>
         <tr>
@@ -1872,13 +2003,13 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
                 <b style="margin:.3em;">Imagen</b>
             </td>
             <td>
-                <input type="file" name="image" accept="image/*" autocomplete="off" required> <small>(Máx 3MB)</small>
+                <input type="file" name="image" accept="image/*" autocomplete="off" required>
             </td>
         </tr>
     </tbody>
 </table>
 <p style="font-size:.9rem">Puedes leer las <a href="' . siteUrl($config['rulesfile']) . '">reglas</a> y la <a href="' . siteUrl($config['helpfile']) . '">ayuda de formato</a>.</p>
-</form></center>';
+</form><br></div></center>';
 
     $posthtml = '';
     foreach ($threads as $thread) {
@@ -2013,20 +2144,27 @@ function generateRobots(): string {
  * Genera un sitemap.xml con las URLs principales del sitio y los hilos existentes.
  */
 function generateSitemap(array $threads, array $config): string {
-    $base = rtrim(
-        ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://')
-        . $_SERVER['HTTP_HOST']
-        . dirname($_SERVER['SCRIPT_NAME']),
-        '/'
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if (!is_string($host) || $host === '' || preg_match('/[\x00-\x20\/\\\\<>"]/', $host)) {
+        $host = $_SERVER['SERVER_NAME'] ?? 'localhost';
+    }
+    if (!is_string($host) || $host === '' || preg_match('/[\x00-\x20\/\\\\<>"]/', $host)) {
+        $host = 'localhost';
+    }
+    $scheme = isHttps($config) ? 'https://' : 'http://';
+    $base = htmlspecialchars(
+        rtrim($scheme . $host . siteBasePath(), '/'),
+        ENT_XML1 | ENT_QUOTES,
+        'UTF-8'
     );
 
     $urls = ['index.html', 'board.html', $config['rulesfile'], $config['helpfile']];
     $xml  = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'];
     foreach ($urls as $page) {
-        $xml[] = "<url><loc>$base/$page</loc></url>";
+        $xml[] = '<url><loc>' . $base . '/' . htmlspecialchars($page, ENT_XML1 | ENT_QUOTES, 'UTF-8') . '</loc></url>';
     }
     foreach ($threads as $t) {
-        $xml[] = "<url><loc>$base/threads/{$t['op']['num']}/</loc></url>";
+        $xml[] = '<url><loc>' . $base . '/threads/' . (int)$t['op']['num'] . '/</loc></url>';
     }
     $xml[] = '</urlset>';
     return implode("\n", $xml);
@@ -2061,19 +2199,27 @@ function paginationHtml(int $current, int $total, string $base, array $config, s
 $mode = $_GET['mode'] ?? '';
 
 if ($mode === 'report') {
-    $num = (int)($_GET['num'] ?? $_POST['num'] ?? 0);
-    if ($num <= 0) showError($config, 'Publicación inválida.');
+    $numValue = $_GET['num'] ?? $_POST['num'] ?? '0';
+    if (!is_string($numValue) || !ctype_digit($numValue) || (int)$numValue <= 0) {
+        showError($config, 'Publicación inválida.');
+    }
+    $num = (int)$numValue;
     $post = getPostByNum($config, $num);
     if ($post === null) showError($config, 'La publicación no existe.');
+    if ((int)$post['deleted'] !== 0) showError($config, 'La publicación ya fue eliminada.');
     if (!empty($post['pinned']) || !empty($post['locked']) || !empty($post['author_admin'])) {
         showError($config, 'No se pueden reportar publicaciones del administrador, fijadas o bloqueadas.');
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $reason = trim($_POST['reason'] ?? '');
+        $reason = $_POST['reason'] ?? '';
+        if (!is_string($reason)) {
+            showError($config, 'El motivo del reporte no es válido.');
+        }
+        $reason = trim($reason);
         if ($reason === '') showError($config, 'Debes indicar un motivo de reporte.');
         insertReport($config, $num, mb_substr($reason, 0, 500));
-        $content = '<center><h2>Gracias</h2><p>Tu reporte para la publicación No.' . $num . ' fue enviado al equipo de moderación.</p></center>';
+        $content = '<center><h1 style="margin-bottom:5px;">Reportar publicación No.' . $num . '</h1><hr><br><h2>Gracias</h2><br><p>Tu reporte para la publicación No.' . $num . ' fue enviado al equipo de moderación.</p></center><br>';
         echo renderPage($config['title'] ?: 'Tenma', $content, $config, ['index.html' => 'Inicio']);
         exit;
     }
@@ -2082,9 +2228,10 @@ if ($mode === 'report') {
     $content = '<center><h1 style="margin-bottom:5px;">Reportar publicación No.' . $num . '</h1><hr>
 <div class="nav">[<a href="' . siteUrl('index.html') . '">Inicio</a>]</div><hr>
 <br>
+<p>Antes de realizar un reporte asegurate de que la publicación si infrinja las <a href="' . siteUrl('rules.html') . '">reglas</a>, caso contrario no lo hagas.</p><br>
 <form method="POST" action="' . siteUrl($config['tenmafile']) . '?mode=report&num=' . $num . '">
 <textarea name="reason" cols="48" rows="4" placeholder="Motivo del reporte" style="display:block;margin:0 auto 8px;" autocomplete="off"></textarea>
-<input type="submit" value="Enviar reporte" style="padding:.15em .3em">
+<input type="submit" value="Enviar reporte" style="padding: 0 .3em">
 </form>
 <br></center>';
     echo renderPage($title, $content, $config);
@@ -2095,15 +2242,21 @@ if ($mode === 'report') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_posts'])) {
     $postnums = is_array($_POST['delete_posts']) ? $_POST['delete_posts'] : [$_POST['delete_posts']];
     foreach ($postnums as $postnum) {
+        if (!is_string($postnum) || !ctype_digit($postnum) || (int)$postnum <= 0) {
+            continue;
+        }
         $num  = (int)$postnum;
-        $post = $num > 0 ? getPostByNum($config, $num) : null;
-        if ($post !== null && (int)$post['deleted'] === 0 && hash_equals((string)$post['postiphash'], $hashedip)) {
+        $post = getPostByNum($config, $num);
+        if ($post !== null && (int)$post['deleted'] === 0
+            && matchesClientIpHash((string)$post['postiphash'], $hashedip, $legacyhashedip)) {
             deletePostCompletely($config, $num);
         }
     }
     buildPages(readPosts($config), $config);
     $returnTo = $_POST['return_to'] ?? siteUrl('board.html');
-    if (!is_string($returnTo) || $returnTo === '' || $returnTo[0] !== '/' || substr($returnTo, 0, 2) === '//') {
+    if (!is_string($returnTo) || $returnTo === '' || $returnTo[0] !== '/'
+        || substr($returnTo, 0, 2) === '//' || strpos($returnTo, '\\') !== false
+        || preg_match('/[\x00-\x1F\x7F]/', $returnTo)) {
         $returnTo = siteUrl('board.html');
     }
     header('Location: ' . $returnTo);
@@ -2123,8 +2276,10 @@ if ($mode === 'manage') {
 
         checkLoginRateLimit($config, $hashedip);
 
-        $validuser = hash_equals($config['adminusername'], trim($_POST['manageusername'] ?? ''));
-        $validpass = password_verify((string)($_POST['managepassword'] ?? ''), $config['adminpasswordhash']);
+        $username = $_POST['manageusername'] ?? '';
+        $password = $_POST['managepassword'] ?? '';
+        $validuser = is_string($username) && hash_equals($config['adminusername'], trim($username));
+        $validpass = is_string($password) && password_verify($password, $config['adminpasswordhash']);
         if ($validuser && $validpass) {
             clearLoginAttempts($config, $hashedip);
             session_regenerate_id(true);
@@ -2141,7 +2296,7 @@ if ($mode === 'manage') {
             registerFailedLogin($config, $hashedip);
             showError($config, 'Usuario o contraseña incorrectos.');
         }
-    } elseif (isset($_COOKIE[$config['managecookie']]) && hash_equals($sessiontoken, $_COOKIE[$config['managecookie']])) {
+    } elseif (isAdminAuthenticated($config)) {
         $canmanage = true;
     }
 
@@ -2175,7 +2330,8 @@ if ($mode === 'manage') {
             showError($config, 'La sesión de administración ha caducado. Recarga la página e inténtalo de nuevo.');
         }
 
-        $page = (int)($_POST['page'] ?? 0);
+        $pageValue = $_POST['page'] ?? '0';
+        $page = is_string($pageValue) && ctype_digit($pageValue) ? (int)$pageValue : 0;
         $tab = $_POST['tab'] ?? 'posts';
         $tab = is_string($tab) && in_array($tab, ['posts', 'reports', 'bans', 'settings'], true) ? $tab : 'posts';
 
@@ -2236,19 +2392,39 @@ if ($mode === 'manage') {
             setThreadFlag($config, $threadNum, $flag, empty($threadPost[$flag]));
         }
         if (isset($_POST['delete'])) {
-            $n = (int)$_POST['delete'];
-            deletePostCompletely($config, $n);
+            $deleteValue = $_POST['delete'];
+            if (!is_string($deleteValue) || !ctype_digit($deleteValue) || (int)$deleteValue <= 0) {
+                showError($config, 'La publicación seleccionada no es válida.');
+            }
+            deletePostCompletely($config, (int)$deleteValue);
         }
         if (isset($_POST['delete_ban'])) {
-            [$ns, $hash] = explode('|', $_POST['delete_ban'], 2);
-            $n = (int)$ns;
-            deletePostCompletely($config, $n);
-            if ($hash !== '') addBan($config, $hash);
+            $deleteBan = $_POST['delete_ban'];
+            $parts = is_string($deleteBan) ? explode('|', $deleteBan, 2) : [];
+            if (count($parts) !== 2 || !ctype_digit($parts[0]) || (int)$parts[0] <= 0
+                || ($parts[1] !== '' && !preg_match('/\A[a-f0-9]{16}\z/i', $parts[1]))) {
+                showError($config, 'La publicación o el hash del baneo no son válidos.');
+            }
+            deletePostCompletely($config, (int)$parts[0]);
+            if ($parts[1] !== '') addBan($config, $parts[1]);
         }
         if (isset($_POST['ban']) && $_POST['ban'] !== '') {
             $durationOptions = ['3600' => 3600, '86400' => 86400, '604800' => 604800, '2592000' => 2592000, '0' => 0];
+            $banValue = $_POST['ban'];
             $duration = $_POST['ban_duration'] ?? '';
-            $hash = $_POST['ban'];
+            $hash = $banValue;
+            if (is_string($banValue) && strpos($banValue, '|') !== false) {
+                [$hash, $postValue] = explode('|', $banValue, 2);
+                if (!ctype_digit($postValue) || (int)$postValue <= 0) {
+                    showError($config, 'La publicación seleccionada para el baneo no es válida.');
+                }
+                $banPost = getPostByNum($config, (int)$postValue);
+                if ($banPost === null || !hash_equals((string)$banPost['postiphash'], $hash)) {
+                    showError($config, 'El hash del baneo no corresponde a la publicación.');
+                }
+                $durationValues = $duration;
+                $duration = is_array($durationValues) ? ($durationValues[$postValue] ?? '') : '';
+            }
             if (!is_string($duration) || !isset($durationOptions[$duration])
                 || !is_string($hash) || !preg_match('/\A[a-f0-9]{16}\z/i', $hash)) {
                 showError($config, 'La duración o el hash del baneo no son válidos.');
@@ -2264,7 +2440,11 @@ if ($mode === 'manage') {
             removeBan($config, $hash);
         }
         if (isset($_POST['dismiss_report'])) {
-            deleteReport($config, (int)$_POST['dismiss_report']);
+            $reportValue = $_POST['dismiss_report'];
+            if (!is_string($reportValue) || !ctype_digit($reportValue) || (int)$reportValue <= 0) {
+                showError($config, 'El reporte seleccionado no es válido.');
+            }
+            deleteReport($config, (int)$reportValue);
         }
 
         buildPages(readPosts($config), $config);
@@ -2282,7 +2462,10 @@ if ($mode === 'manage') {
     }
     $totalcount   = count($allpostsraw);
     $totalpages   = max(1, (int)ceil($totalcount / $config['postsperpage']));
-    $pagenumber   = max(0, min((int)($_GET['page'] ?? 0), $totalpages - 1));
+    $pageValue    = $_GET['page'] ?? '0';
+    $pagenumber   = is_string($pageValue) && ctype_digit($pageValue)
+        ? min((int)$pageValue, $totalpages - 1)
+        : 0;
     $pageposts    = array_slice($allpostsraw, $pagenumber * $config['postsperpage'], $config['postsperpage']);
     $title = ($config['title'] ?: 'Tenma') . ' - Admin';
 
@@ -2344,6 +2527,7 @@ if ($mode === 'manage') {
 <hr>
 <section class="admin-settings-block">
 <h3>Mantenimiento</h3>
+<p class="admin-status">Regenera todos los archivos .html realizando una actualización completa del sitio</p>
 <div class="admin-toolbar admin-button-group">
 <form method="POST" action="?mode=manage">
 <input type="hidden" name="csrf_token" value="' . $csrfToken . '">
@@ -2354,38 +2538,49 @@ if ($mode === 'manage') {
     }
 
     if ($tab === 'reports') {
-        $content .= '<section class="admin-section"><h2 class="admin-section-title">Reportes pendientes (' . count($reports) . ')</h2>';
+        $content .= '<section class="admin-section"><h2 class="admin-section-title">Reportes (' . count($reports) . ')</h2>';
         if (!empty($reports)) {
-            $content .= '
-<form method="POST" action="?mode=manage">
+            $content .= '<div class="report-grid">';
+            foreach ($reports as $r) {
+                $rnum   = (int)$r['num'];
+                $reason = htmlspecialchars(mb_substr($r['reason'], 0, 120));
+                $rtime  = htmlspecialchars($r['time']);
+                $reportedPost = $postsByNum[$rnum] ?? null;
+                $reportedHash = is_array($reportedPost) ? (string)$reportedPost['postiphash'] : '';
+                $content .= '<form method="POST" action="?mode=manage">
 <input type="hidden" name="tab" value="reports">
 <input type="hidden" name="page" value="' . $pagenumber . '">
 <input type="hidden" name="csrf_token" value="' . $csrfToken . '">
-<div class="report-grid">';
-        foreach ($reports as $r) {
-            $rnum   = (int)$r['num'];
-            $reason = htmlspecialchars(mb_substr($r['reason'], 0, 120));
-            $rtime  = htmlspecialchars($r['time']);
-            $content .= '<div class="report-card reported-post">
+<div class="report-card reported-post">
 <div class="rc-num">Reporte de No.' . $rnum . '</div>
 <div class="rc-reason">' . $reason . '</div>
 <div class="rc-time">' . $rtime . '</div>
 <div class="rc-actions admin-button-group">
   <button type="submit" name="dismiss_report" value="' . $r['id'] . '">Descartar</button>
-  <button type="submit" name="delete" value="' . $rnum . '">Eliminar</button>
+  <button type="submit" name="delete" value="' . $rnum . '">Eliminar</button>';
+                if (preg_match('/\A[a-f0-9]{16}\z/i', $reportedHash)) {
+                    $content .= '<label>Duración del baneo: <select name="ban_duration">
+<option value="3600">1 hora</option>
+<option value="86400">1 día</option>
+<option value="604800">7 días</option>
+<option value="2592000">30 días</option>
+<option value="0">Permanente</option>
+</select></label>
+  <button type="submit" name="ban" value="' . htmlspecialchars($reportedHash, ENT_QUOTES, 'UTF-8') . '">Banear IP</button>';
+                }
+                $content .= '
 </div>
 <div class="reported-publication">';
-            if (isset($postsByNum[$rnum])) {
-                $reportedPost = $postsByNum[$rnum];
-                $content .= (int)$reportedPost['parent'] > 0
-                    ? renderReply($reportedPost, $allpostsraw, false, $config, false, true)
-                    : renderOP($reportedPost, $allpostsraw, false, false, $config, false, true);
-            } else {
-                $content .= '<p class="error-message">La publicación reportada ya no está disponible.</p>';
+                if ($reportedPost !== null) {
+                    $content .= (int)$reportedPost['parent'] > 0
+                        ? renderReply($reportedPost, $allpostsraw, false, $config, false, true)
+                        : renderOP($reportedPost, $allpostsraw, false, false, $config, false, true);
+                } else {
+                    $content .= '<p class="error-message">La publicación reportada ya no está disponible.</p>';
+                }
+                $content .= '</div></div></form>';
             }
-            $content .= '</div></div>';
-        }
-        $content .= '</div></form>';
+            $content .= '</div>';
         } else {
             $content .= '<p style="text-align:center;margin:10px 0;">No hay reportes pendientes.</p>';
         }
@@ -2393,7 +2588,7 @@ if ($mode === 'manage') {
     }
 
     if ($tab === 'bans') {
-        $content .= '<section class="admin-section"><h2 class="admin-section-title">Baneos registrados (' . count($bans) . ')</h2>';
+        $content .= '<section class="admin-section"><h2 class="admin-section-title">Baneos (' . count($bans) . ')</h2>';
         if (!empty($bans)) {
             $content .= '<form method="POST" action="?mode=manage">
 <input type="hidden" name="tab" value="bans">
@@ -2424,7 +2619,7 @@ if ($mode === 'manage') {
     }
 
     if ($tab === 'posts') {
-        $content .= '<section class="admin-section"><h2 class="admin-section-title">Publicaciones <small>(' . $totalcount . ' en total)</small></h2>';
+        $content .= '<section class="admin-section"><h2 class="admin-section-title">Publicaciones (' . $totalcount . ')</h2>';
         $content .= '<form method="POST" action="?mode=manage">
 <input type="hidden" name="tab" value="posts">
 <input type="hidden" name="page" value="' . $pagenumber . '">
@@ -2447,14 +2642,14 @@ if ($mode === 'manage') {
             } else {
                 $content .= '<button type="submit" name="delete" value="' . $num . '">Eliminar</button>';
             }
-            $content .= '<label>Duración del baneo: <select name="ban_duration">
+            $content .= '<label>Duración del baneo: <select name="ban_duration[' . $num . ']">
 <option value="3600">1 hora</option>
 <option value="86400">1 día</option>
 <option value="604800">7 días</option>
 <option value="2592000">30 días</option>
 <option value="0">Permanente</option>
 </select></label>
-<button type="submit" name="ban" value="' . htmlspecialchars($hash, ENT_QUOTES, 'UTF-8') . '">Banear IP</button>';
+<button type="submit" name="ban" value="' . htmlspecialchars($hash . '|' . $num, ENT_QUOTES, 'UTF-8') . '">Banear IP</button>';
             if ((int)$p['parent'] === 0 && (int)$p['deleted'] === 0) {
                 $locked = !empty($p['locked']);
                 $pinned = !empty($p['pinned']);
@@ -2477,8 +2672,7 @@ if ($mode === 'manage') {
 
 // ===== BLOQUEO =====
 if (file_exists($config['lockfile'])) {
-    $hashedcookie = $_COOKIE[$config['managecookie']] ?? '';
-    if (!hash_equals(adminSessionToken($config), $hashedcookie)) {
+    if (!isAdminAuthenticated($config)) {
         showError($config, 'Las publicaciones están bloqueadas temporalmente.');
     }
 }
@@ -2487,16 +2681,24 @@ if (file_exists($config['lockfile'])) {
  * Traduce los códigos de error de subida de PHP a mensajes comprensibles para el usuario.
  */
 function getUploadErrorMessage(int $errorCode): string {
-    return match ($errorCode) {
-        UPLOAD_ERR_INI_SIZE => 'El archivo supera el límite permitido por el servidor.',
-        UPLOAD_ERR_FORM_SIZE => 'El archivo supera el límite permitido por el formulario.',
-        UPLOAD_ERR_PARTIAL => 'La subida se interrumpió antes de completarse.',
-        UPLOAD_ERR_NO_FILE => 'No se seleccionó ningún archivo.',
-        UPLOAD_ERR_NO_TMP_DIR => 'No hay un directorio temporal disponible para la subida.',
-        UPLOAD_ERR_CANT_WRITE => 'No se pudo escribir el archivo en disco.',
-        UPLOAD_ERR_EXTENSION => 'Una extensión de PHP detuvo la subida.',
-        default => 'Ocurrió un error desconocido al subir el archivo.',
-    };
+    switch ($errorCode) {
+        case UPLOAD_ERR_INI_SIZE:
+            return 'El archivo supera el límite permitido por el servidor.';
+        case UPLOAD_ERR_FORM_SIZE:
+            return 'El archivo supera el límite permitido por el formulario.';
+        case UPLOAD_ERR_PARTIAL:
+            return 'La subida se interrumpió antes de completarse.';
+        case UPLOAD_ERR_NO_FILE:
+            return 'No se seleccionó ningún archivo.';
+        case UPLOAD_ERR_NO_TMP_DIR:
+            return 'No hay un directorio temporal disponible para la subida.';
+        case UPLOAD_ERR_CANT_WRITE:
+            return 'No se pudo escribir el archivo en disco.';
+        case UPLOAD_ERR_EXTENSION:
+            return 'Una extensión de PHP detuvo la subida.';
+        default:
+            return 'Ocurrió un error desconocido al subir el archivo.';
+    }
 }
 
 /**
@@ -2505,7 +2707,7 @@ function getUploadErrorMessage(int $errorCode): string {
  */
 function storeUploadedImage(array $config, array $file): array {
     // Validación básica del formulario de subida.
-    if (!isset($file['error']) || !is_array($file)) {
+    if (!isset($file['error']) || !is_int($file['error'])) {
         throw new RuntimeException('La información del archivo no es válida.');
     }
 
@@ -2535,19 +2737,22 @@ function storeUploadedImage(array $config, array $file): array {
     }
 
     // Limitamos el tamaño para evitar archivos demasiado pesados.
-    $fileSize = (int)($file['size'] ?? 0);
+    if (!isset($file['size']) || !is_int($file['size']) || $file['size'] < 0) {
+        throw new RuntimeException('El tamaño del archivo no es válido.');
+    }
+    $fileSize = $file['size'];
     if ($fileSize > $config['maximagesize']) {
         throw new RuntimeException('La imagen supera el tamaño máximo de 3MB.');
     }
 
     // Convertimos el tipo MIME a una extensión segura para el nombre de archivo.
-    $extension = match ($mimeType) {
+    $extensions = [
         'image/jpeg' => 'jpg',
         'image/png'  => 'png',
         'image/gif'  => 'gif',
         'image/webp' => 'webp',
-        default      => 'bin',
-    };
+    ];
+    $extension = $extensions[$mimeType] ?? 'bin';
 
     if ($extension === 'bin') {
         throw new RuntimeException('Tipo de imagen no permitido.');
@@ -2575,13 +2780,22 @@ function storeUploadedImage(array $config, array $file): array {
 
 // ===== PUBLICAR =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    foreach (['name', 'subject', 'com'] as $field) {
+        if (isset($_POST[$field]) && !is_string($_POST[$field])) {
+            showError($config, 'Los datos de la publicación no son válidos.');
+        }
+    }
     $name    = trim($_POST['name']    ?? '');
     $subject = trim($_POST['subject'] ?? '');
     $comment = trim($_POST['com']     ?? '');
-    $parent  = (int)($_POST['parent'] ?? 0);
+    $parentValue = $_POST['parent'] ?? '0';
+    if (!is_string($parentValue) || !ctype_digit($parentValue)) {
+        showError($config, 'El hilo seleccionado no es válido.');
+    }
+    $parent = (int)$parentValue;
     if ($parent > 0) {
         $parentThread = getPostByNum($config, $parent);
-        if ($parentThread === null || (int)$parentThread['parent'] !== 0) {
+        if ($parentThread === null || (int)$parentThread['parent'] !== 0 || (int)$parentThread['deleted'] !== 0) {
             showError($config, 'El hilo al que intentas responder no existe.');
         }
         if (!empty($parentThread['locked'])) {
@@ -2600,7 +2814,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // mantener este bloque de publicación más legible y fácil de mantener.
     $imagefile = '';
     $filesize  = 0;
-    if (isset($_FILES['image']) && is_array($_FILES['image']) && ($_FILES['image']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+    if (isset($_FILES['image']) && (!is_array($_FILES['image'])
+        || !isset($_FILES['image']['error']) || !is_int($_FILES['image']['error']))) {
+        showError($config, 'La información del archivo no es válida.');
+    }
+    if (isset($_FILES['image']) && ($_FILES['image']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
         try {
             $uploaded = storeUploadedImage($config, $_FILES['image']);
             $imagefile = $uploaded['filename'];
