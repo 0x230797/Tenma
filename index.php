@@ -1210,6 +1210,8 @@ function generateStyles(array $config): string {
     .quotelink { font-size: .92rem; }
     .post-media { float: left; margin: 0 15px 5px 0 }
     .post-media img { display: block; height: auto }
+    .post-image-link img { cursor: zoom-in }
+    .post-image-link img.is-expanded { max-width: 90vw !important; max-height: 90vh !important; cursor: zoom-out }
     .postheader { font-size: .92rem; display: contents }
     .postheader .subject { color: var(--post-subject-color); font-weight: bold }
     .postactions { font-size: .92rem }
@@ -1217,11 +1219,11 @@ function generateStyles(array $config): string {
     .thread-status-icons img { width: 16px; height: 16px; vertical-align: middle }
     .post-checkbox { margin: 0 5px 0 0; vertical-align: middle }
     .op-post { width: 100%; padding: 5px 0; overflow: visible }
-    .reply-post { display: block; padding: 5px; margin: 0 0 4px 0; border: 1px solid var(--post-border); background-color: var(--post-background); overflow: visible; max-width: fit-content; }
-    .post-highlight { animation: post-highlight 3s ease-in-out forwards; }
+    .reply-post { display: flow-root; padding: 5px; margin: 0 0 4px 0; border: 1px solid var(--post-border); background-color: var(--post-background); overflow: visible; max-width: fit-content; }
+    .post-highlight { animation: post-highlight 3s ease-in-out; }
     @keyframes post-highlight {
         0% { background-color: var(--post-background); }
-        20% { background-color: #F0C0B0; }
+        50% { background-color: #F0C0B0; }
         100% { background-color: var(--post-background); }
     }
     .index-image-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); justify-items: center; gap: 16px; padding: 10px; }
@@ -1431,6 +1433,15 @@ function generateScript(): string {
         }
     });
 
+    document.addEventListener('click', function(event) {
+        var image = event.target.closest('.post-image-link img');
+        if (!image) return;
+
+        event.preventDefault();
+        var expanded = image.classList.toggle('is-expanded');
+        image.closest('.post-image-link').setAttribute('aria-expanded', String(expanded));
+    });
+
     // Al cargar la página, agregar la cita si viene en la URL
     window.addEventListener('load', function() {
         var url = window.location.href;
@@ -1580,7 +1591,7 @@ function renderImageBlock(array $post, bool $large, array $config): string {
               . htmlspecialchars($post['image']) . '</a>'
               . ' (' . $size . ($dimstext !== '' ? ', ' . $dimstext : '') . ')</div>';
     $img      = '<div class="post-media">'
-              . '<a href="' . $path . '" target="_blank">'
+              . '<a class="post-image-link" href="' . $path . '" aria-expanded="false">'
               . '<img src="' . $path . '" style="' . $maxcss . '" alt="imagen">'
               . '<span class="mobile-file-info mobile">' . $size . ' ' . $extensionLabel . '</span>'
               . '</a></div>';
@@ -1738,7 +1749,7 @@ function renderOP(array $post, array $allposts, bool $isthread, bool $summarize,
          . '<span class="postactions">' . $replyLink . $postMenu . '</span>'
          . $postBacklinks
          . '</div>'
-         . '<div class="post-content mobile-post-content">' . $comment . '<br clear="all"></div>'
+         . '<div class="post-content mobile-post-content">' . $comment . '</div>'
          . $mobileLink
          . '</div>';
 }
@@ -1906,7 +1917,10 @@ function generateIndex(array $allposts, array $config): string {
 
     $images = array_slice(array_reverse(array_values(array_filter(
         $allposts,
-        fn($p) => !empty($p['image']) && (int)$p['deleted'] === 0 && file_exists($config['uploadfolder'] . $p['image'])
+        fn($p) => !empty($p['image'])
+            && (int)$p['deleted'] === 0
+            && (int)$p['parent'] === 0
+            && file_exists($config['uploadfolder'] . $p['image'])
     ))), 0, 8);
 
     $gallery = '';
@@ -2107,6 +2121,7 @@ function generateThread(array $thread, array $allposts, array $config): string {
         ? '<p style="text-align:center;color:#f00;font-size:1.4rem;font-weight:bold;margin:2em 0;">Hilo cerrado.<br>No se permite responder en este momento.</p>'
         : $replyForm;
     $deleteForm = '<div class="delete"><button type="submit">Eliminar</button></div>';
+    $posthtml .= '<hr style="clear:both;">';
     $content = '<div class="board-column"><center><h1 style="margin-bottom:5px;">' . $title . '</h1></center>
 <hr>
 <div class="nav">[<a href="' . siteUrl('index.html') . '">Inicio</a>] [<a href="' . siteUrl('board.html') . '">Tablón</a>]</div>
