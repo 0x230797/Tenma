@@ -1036,7 +1036,7 @@ function formatComment(string $text, array $allposts): string {
                     return '<a href="' . threadUrl($thread) . '#p' . $num . '" class="quotelink">&gt;&gt;' . $num . '</a>';
             }
         }
-        return '<span style="color:red;">&gt;&gt;' . $num . '</span>';
+        return '<s style="color:red;">&gt;&gt;' . $num . '</s>';
     }, $text);
 
     // Negrita: **texto**
@@ -1049,7 +1049,7 @@ function formatComment(string $text, array $allposts): string {
     $text = preg_replace('/_(.+?)_/s', '<u>$1</u>', $text);
 
     // >greentext y <pinktext — por línea
-    $lines = explode('<br />', nl2br($text));
+    $lines = preg_split('/\r\n|\r|\n/', $text);
     foreach ($lines as &$line) {
         // Greentext: línea empieza con > (pero no >>)
         if (preg_match('/^&gt;[^>]/', $line)) {
@@ -1306,7 +1306,7 @@ function generateStyles(array $config): string {
     .admin-status { margin-top: 12px; }
     .admin-status p { margin: 10px 0 }
     .admin-post-entry { padding: 5px 0 }
-    .admin-post-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: .9rem }
+    .admin-post-controls { clear: both; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: .9rem }
     .admin-post-hash { color: var(--muted-text-color); overflow-wrap: anywhere }
     .admin-post-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px }
     .admin-post-actions .thread-admin-action { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap }
