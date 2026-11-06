@@ -33,16 +33,46 @@ $config = [
     'deletionphrase'            => 'Eliminado',
     'rules'
     => [
-        'Respeto: trata a los demás con respeto. No se permiten insultos, amenazas ni ataques personales.',
-        'Contenido ilegal: no publiques contenido que infrinja las leyes aplicables.',
-        'Privacidad: no publiques datos personales de otras personas, como direcciones, teléfonos, documentos o información que permita identificarlas.',
-        'Archivos: se permiten imágenes JPG, PNG, GIF y WEBP de hasta 3 MB por archivo.',
-        'Spam y publicidad: no repitas mensajes ni publiques publicidad, enlaces comerciales o propaganda no solicitada.',
-        'Seguridad: no compartas enlaces ni archivos que contengan malware, intenten robar información o busquen engañar a otras personas.',
-        'Reportes: el equipo de moderación revisará los reportes y podrá tomar medidas, como editar o eliminar publicaciones o aplicar baneos.',
-        'Moderación: el administrador puede eliminar publicaciones o banear direcciones IP o sus hashes, sin previo aviso, ante infracciones claras.',
-        'Protección de menores: no publiques imágenes ni información que exponga a menores de edad o pueda ponerlos en riesgo.',
-        'Al publicar, aceptas que el contenido se almacene y sea visible públicamente hasta que lo elimine el equipo de moderación.',
+        [
+            'title' => 'Respeto y convivencia',
+            'desc'  => 'Debate las ideas sin atacar a las personas. No se permiten insultos dirigidos, acoso, amenazas ni incitación a la violencia.',
+        ],
+        [
+            'title' => 'Contenido legal',
+            'desc'  => 'No publiques material cuya creación, posesión o distribución infrinja las leyes aplicables.',
+        ],
+        [
+            'title' => 'Privacidad',
+            'desc'  => 'No compartas información privada o que permita identificar o localizar a alguien sin su consentimiento, por ejemplo, domicilio, teléfono, documentos o datos de contacto.',
+        ],
+        [
+            'title' => 'Imágenes y archivos',
+            'desc'  => 'Solo se aceptan imágenes JPG, PNG, GIF y WEBP de hasta 3 MB por archivo. No intentes subir archivos ejecutables ni disfrazar otros tipos de archivo como imágenes.',
+        ],
+        [
+            'title' => 'Spam y publicidad',
+            'desc'  => 'Evita publicar repetidamente, inundar los hilos o enviar publicidad, enlaces comerciales y propaganda no solicitada.',
+        ],
+        [
+            'title' => 'Enlaces y seguridad',
+            'desc'  => 'No publiques enlaces o archivos que distribuyan malware, intenten robar credenciales o datos, suplanten identidades o engañen a otros usuarios.',
+        ],
+        [
+            'title' => 'Protección de menores',
+            'desc'  => 'No publiques contenido sexual de menores ni información o imágenes que permitan identificarlos, localizarlos o ponerlos en riesgo.',
+        ],
+        [
+            'title' => 'Uso de reportes',
+            'desc'  => 'Reporta publicaciones que incumplan estas reglas e indica el motivo. Los reportes se revisan; no los uses para hostigar a otros usuarios.',
+        ],
+        [
+            'title' => 'Moderación',
+            'desc'  => 'El administrador puede retirar contenido o bloquear el acceso al tablón, incluso mediante la dirección IP o su hash. Las medidas pueden aplicarse sin aviso previo ante infracciones claras.',
+        ],
+        [
+            'title' => 'Visibilidad del contenido',
+            'desc'  => 'Al publicar, aceptas que el contenido se almacene y sea visible públicamente. No publiques nada que necesites mantener privado; el contenido permanecerá disponible hasta que sea eliminado.',
+        ],
     ],
     'helps'
     => [
@@ -1234,7 +1264,7 @@ function generateStyles(array $config): string {
     .post-content { margin-top: 4px }
     .omitted { padding: 0 0 5px; font-size: .875rem }
     .hidden-post-placeholder { display: inline-block; padding: 4px 10px; margin: 4px 0; border: 1px dashed var(--border-color); background: var(--placeholder-background); color: var(--text-color); }
-    .delete { text-align: right; margin: 5px 0; }
+    .delete { clear: both; text-align: right; margin: 5px 0; }
     .delete button { padding: .15em .3em; }
 
     /* ===== Cabecera de publicación en móvil ===== */
@@ -1283,6 +1313,11 @@ function generateStyles(array $config): string {
     .help-syntax { font-family: monospace; flex: 0 0 110px }
     .help-preview { flex: 0 0 100px; font-size: .97rem }
     .help-desc { flex: 1 1 auto; font-size: .9rem; color: var(--help-desc-color) }
+    .rules-intro { margin: 10px auto; text-align: center }
+    .rules-list { padding: 0 10px; list-style: none; }
+    .rules-list li { margin-bottom: 10px; }
+    .rules-list h2 { font-size: 1rem; }
+    .rules-list p { font-size: .92rem; line-height: 1.55 }
 
     /* ===== Panel de administración ===== */
     .admin-page { width: 100% }
@@ -1495,16 +1530,22 @@ function generateScript(): string {
         var nodes = document.querySelectorAll('[data-post-id]');
         for (var i = 0; i < nodes.length; i++) {
             var postId = nodes[i].getAttribute('data-post-id');
-            var isHidden = hidden.indexOf(postId) !== -1;
+            var threadId = nodes[i].getAttribute('data-thread-id');
+            var isPostHidden = hidden.indexOf(postId) !== -1;
+            var isThreadHidden = threadId !== postId && hidden.indexOf(threadId) !== -1;
+            var isHidden = isPostHidden || isThreadHidden;
             var placeholder = nodes[i].previousElementSibling;
             if (isHidden) {
                 nodes[i].style.display = 'none';
-                if (!placeholder || placeholder.getAttribute('data-hidden-post-id') !== postId) {
+                if (isPostHidden && !isThreadHidden
+                    && (!placeholder || placeholder.getAttribute('data-hidden-post-id') !== postId)) {
                     placeholder = document.createElement('div');
                     placeholder.className = 'hidden-post-placeholder';
                     placeholder.setAttribute('data-hidden-post-id', postId);
                     placeholder.innerHTML = 'Publicación oculta - <a href="#" onclick="tenmaShowHiddenPost(' + postId + '); return false;">Mostrar</a>';
                     nodes[i].parentNode.insertBefore(placeholder, nodes[i]);
+                } else if (placeholder && placeholder.getAttribute('data-hidden-post-id') === postId) {
+                    placeholder.remove();
                 }
             } else {
                 nodes[i].style.display = '';
@@ -1703,7 +1744,7 @@ function renderOP(array $post, array $allposts, bool $isthread, bool $summarize,
     $postMenu = $adminView ? '' : renderPostMenu($post, (int)$post['num'], $config);
 
     if ((int)$post['deleted'] > 0) {
-        return '<div id="p' . $post['num'] . '" class="op-post" data-post-id="' . $post['num'] . '" style="background-color:' . $config['postbackground'] . ';">'
+        return '<div id="p' . $post['num'] . '" class="op-post" data-post-id="' . $post['num'] . '" data-thread-id="' . $post['num'] . '" style="background-color:' . $config['postbackground'] . ';">'
              . '<i>' . $config['deletionphrase'] . '</i>'
              . '<span class="postactions">' . $postMenu . '</span>'
              . '</div>';
@@ -1736,7 +1777,7 @@ function renderOP(array $post, array $allposts, bool $isthread, bool $summarize,
         ? 'No.' . $post['num']
         : '<span class="postnum" onclick="quotePost(' . $post['num'] . ')" title="Responder citando esta publicación">No.' . $post['num'] . '</span>';
     $postBacklinks = renderPostBacklinks($post, $allposts);
-    return '<div id="p' . $post['num'] . '" class="op-post" data-post-id="' . $post['num'] . '">'
+    return '<div id="p' . $post['num'] . '" class="op-post" data-post-id="' . $post['num'] . '" data-thread-id="' . $post['num'] . '">'
          . $mobileInfo
          . $imageHtml
          . '<div class="postheader desktop">'
@@ -1780,7 +1821,7 @@ function renderReply(array $post, array $allposts, bool $summarize, array $confi
         : '<span class="postnum" onclick="quotePost(' . $post['num'] . ')" title="Responder citando esta publicación">No.' . $post['num'] . '</span>';
     $postBacklinks = renderPostBacklinks($post, $allposts);
 
-    return '<div id="p' . $post['num'] . '" class="reply-post" data-post-id="' . $post['num'] . '">'
+    return '<div id="p' . $post['num'] . '" class="reply-post" data-post-id="' . $post['num'] . '" data-thread-id="' . (int)$post['parent'] . '">'
          . $mobileInfo
          . $imageHtml
          . '<div class="postheader desktop">'
@@ -1853,13 +1894,16 @@ function generateRules(array $config): string {
     $title = ($config['title'] ?: 'Tenma') . ' - Reglas';
     $items = '';
     foreach ($config['rules'] as $rule) {
-        $items .= '<li style="padding:3px 0;">' . htmlspecialchars((string)$rule) . '</li>';
+        $ruleTitle = htmlspecialchars((string)($rule['title'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $ruleDescription = htmlspecialchars((string)($rule['desc'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $items .= '<li><h2>' . $ruleTitle . '</h2><p>' . $ruleDescription . '</p></li>';
     }
     $content = '<center><h1 style="margin-bottom:5px;">' . $title . '</h1></center><hr>
 <div class="nav">[<a href="' . siteUrl('index.html') . '">Inicio</a>]</div><hr>
-<div style="background:#fff;margin:1em 0;border:1px solid #800;">
-<h3 style="margin:0 0 10px;padding:3px 10px;background:' . $config['section'] . ';">Reglas</h3>
-<ul style="padding:0 0 10px 20px;list-style:disc;">' . $items . '</ul>
+<div style="margin:1em 0;border:1px solid #800;background:#fff;">
+<h2 style="margin:0;padding:8px 12px;background:' . $config['section'] . ';font-size:1.15rem;">Reglas de convivencia</h2>
+<p class="rules-intro">Para mantener un espacio útil y seguro, sigue estas reglas al publicar y participar.<br>El contenido puede ser retirado si las incumple.</p>
+<ol class="rules-list">' . $items . '</ol>
 </div>';
     return renderPage($title, $content, $config);
 }
@@ -2061,7 +2105,7 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
 
     $content = '<div class="board-column"><center style="margin-bottom:5px"><h1>' . $title . '</h1><h3>' . $subtitle . '</h3></center><hr>
 <div class="nav">[<a href="' . siteUrl('index.html') . '">Inicio</a>]</div><hr>
-' . $formhtml . $notice . '<form method="POST" action="' . siteUrl($config['tenmafile']) . '" onsubmit="return confirm(\'¿Eliminar las publicaciones seleccionadas?\');">'
+' . $formhtml . $notice . '<form method="POST" action="' . siteUrl($config['tenmafile']) . '" onsubmit="return confirm(\'¿Deseas eliminar las publicaciones seleccionadas?\');">'
  . '<input type="hidden" name="return_to" value="' . siteUrl('board.html') . '">'
  . $posthtml . $pagehtml . '</form></div>';
 
@@ -2127,7 +2171,7 @@ function generateThread(array $thread, array $allposts, array $config): string {
 <div class="nav">[<a href="' . siteUrl('index.html') . '">Inicio</a>] [<a href="' . siteUrl('board.html') . '">Tablón</a>]</div>
 <hr>
 ' . $replySection . '<hr>
-<form method="POST" action="' . siteUrl($config['tenmafile']) . '" onsubmit="return confirm(\'¿Eliminar las publicaciones seleccionadas?\');">'
+<form method="POST" action="' . siteUrl($config['tenmafile']) . '" onsubmit="return confirm(\'¿Deseas eliminar las publicaciones seleccionadas?\');">'
  . '<input type="hidden" name="return_to" value="' . threadUrl((int)$threadnum) . '">'
  . $posthtml . $deleteForm . '</form></div>';
 
@@ -2256,15 +2300,23 @@ if ($mode === 'report') {
 // ===== ELIMINACIÓN DEL PROPIO USUARIO =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_posts'])) {
     $postnums = is_array($_POST['delete_posts']) ? $_POST['delete_posts'] : [$_POST['delete_posts']];
+    $isAdmin = isAdminAuthenticated($config);
+    $expiredPostIds = [];
     foreach ($postnums as $postnum) {
         if (!is_string($postnum) || !ctype_digit($postnum) || (int)$postnum <= 0) {
             continue;
         }
         $num  = (int)$postnum;
         $post = getPostByNum($config, $num);
-        if ($post !== null && (int)$post['deleted'] === 0
-            && matchesClientIpHash((string)$post['postiphash'], $hashedip, $legacyhashedip)) {
-            deletePostCompletely($config, $num);
+        if ($post !== null && (int)$post['deleted'] === 0) {
+            $age = time() - (int)$post['now'];
+            $isAuthorWithinDeletionWindow = $age >= 0 && $age <= 30
+                && matchesClientIpHash((string)$post['postiphash'], $hashedip, $legacyhashedip);
+            if ($isAdmin || $isAuthorWithinDeletionWindow) {
+                deletePostCompletely($config, $num);
+            } elseif ($age > 30) {
+                $expiredPostIds[$num] = $num;
+            }
         }
     }
     buildPages(readPosts($config), $config);
@@ -2273,6 +2325,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_posts'])) {
         || substr($returnTo, 0, 2) === '//' || strpos($returnTo, '\\') !== false
         || preg_match('/[\x00-\x1F\x7F]/', $returnTo)) {
         $returnTo = siteUrl('board.html');
+    }
+    if ($expiredPostIds !== []) {
+        $postIds = implode(', ', array_values($expiredPostIds));
+        $alertMessage = count($expiredPostIds) === 1
+            ? 'No puedes eliminar la publicación No. ' . $postIds . ' porque se excedió el tiempo límite de 30 segundos.'
+            : 'No puedes eliminar las publicaciones No. ' . $postIds . ' porque se excedió el tiempo límite de 30 segundos.';
+        $alertMessageJson = json_encode(
+            $alertMessage,
+            JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE
+        );
+        $redirectUrl = json_encode(
+            $returnTo,
+            JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE
+        );
+        header('Content-Type: text/html; charset=UTF-8');
+        echo '<!doctype html><html lang="es"><meta charset="UTF-8"><script>alert(' . $alertMessageJson . ');window.location.replace('
+            . $redirectUrl . ');</script></html>';
+        exit;
     }
     header('Location: ' . $returnTo);
     exit;
