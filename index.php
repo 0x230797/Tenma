@@ -112,6 +112,12 @@ $config = [
             'desc'   => 'Rodea el texto con guiones bajos.',
             'html'   => '<u>Subrayado</u>',
         ],
+        [
+            'title'  => 'Tachado',
+            'syntax' => '-Tachado-',
+            'desc'   => 'Rodea el texto con guiones.',
+            'html'   => '<s>Tachado</s>',
+        ],
     ],
     'adminusername'      => 'admin',
     'adminpasswordhash'  => '$2y$10$zySRVu7lckJtryP6KgXkeufif94bcBvhbvecQLmhNAFLauqbI/jDy', // admin123
@@ -1048,11 +1054,11 @@ function formatBytes(int $bytes, int $precision = 2): string {
 
 /**
  *  Aplica formato al texto de un comentario:
- *  >>citas, >greentext, <pinktext, **negrita**, ~cursiva~, _subrayado_
+ *  >>citas, >greentext, <pinktext, **negrita**, ~cursiva~, _subrayado_, -tachado-
  */
 /**
  * Aplica el formato visual del tablón al texto de un comentario.
- * Convierte citas, greentext, pinktext, negritas, cursivas y subrayados.
+ * Convierte citas, greentext, pinktext, negritas, cursivas, subrayados y tachados.
  */
 function formatComment(string $text, array $allposts): string {
     $text = htmlspecialchars($text);
@@ -1077,6 +1083,9 @@ function formatComment(string $text, array $allposts): string {
 
     // Subrayado: _texto_
     $text = preg_replace('/_(.+?)_/s', '<u>$1</u>', $text);
+
+    // Tachado: -texto-
+    $text = preg_replace('/-(.+?)-/s', '<s>$1</s>', $text);
 
     // >greentext y <pinktext — por línea
     $lines = preg_split('/\r\n|\r|\n/', $text);
@@ -1211,7 +1220,10 @@ function generateStyles(array $config): string {
     html { font-size: clamp(1rem, calc(.9375rem + .25vw), 1rem) }
     * { margin: 0; padding: 0; box-sizing: border-box; overflow-wrap: break-word; word-wrap: break-word }
     body { font-family: var(--font-family); color: var(--text-color); padding: 10px; background: linear-gradient(to bottom, var(--gradient-color) 0, var(--background-color) 190px) no-repeat; background-color: var(--background-color); overflow-x: hidden }
-    button, input, select, textarea { font-size: 1rem }
+    button,
+    input,
+    select,
+    textarea { font-size: 1rem }
     button { padding: 0 .3em }
     hr { border: none; opacity: .3; border-top: 1px solid var(--text-color) }
     ul { list-style-type: none; margin: 1em; padding: 0 }
@@ -1230,7 +1242,9 @@ function generateStyles(array $config): string {
     .postnum:hover { text-decoration: underline; color: var(--link-hover-color) }
 
     /* ===== Formularios ===== */
-    input[type=text], input[type=password], textarea { font-family:sans-serif; padding:.2em; border: 1px solid var(--border-color) }
+    input[type=text],
+    input[type=password],
+    textarea { font-family:sans-serif; padding:.2em; border: 1px solid var(--border-color) }
     .post-form ::placeholder { opacity: 0 }
     .post-form-toggle { padding: 0; border: 0; background: none; color: #0000EE; font: inherit; font-weight: bold; cursor: pointer }
     .post-form-toggle:hover { color: var(--link-hover-color) }
@@ -1281,17 +1295,22 @@ function generateStyles(array $config): string {
 
     /* ===== Menú de acciones de publicación ===== */
     .post-menu { display: inline-block; position: relative; margin-left: 4px; font-size: .875rem }
-    .post-menu summary { display: inline-block; width: 16px; cursor: pointer; color: var(--text-color); list-style: none }
+    .post-menu summary { display: inline-block; width: 16px; cursor: pointer; color: var(--text-color); list-style: none; font-size: .9em; }
     .post-menu summary::-webkit-details-marker { display: none }
-    .post-menu summary::before { content: '▶'; }
+    .post-menu summary::before { content: '►'; }
     .post-menu[open] summary::before { content: '▼'; }
     .post-menu summary:hover { color: var(--link-hover-color); }
     .post-menu-content { position: absolute; z-index: 10; top: 1.35em; left: 0; min-width: 115px; padding: 0; background: var(--menu-background); border: 1px solid var(--menu-border); text-align: left }
-    .post-menu-content a, .post-menu-content button, .post-menu-label { display: block; width: 100%; padding: 3px 6px; border: 0; background: transparent; color: var(--text-color); font: inherit; text-align: left; white-space: nowrap; cursor: pointer }
-    .post-menu-content a:hover, .post-menu-content button:hover, .post-menu-label:hover { background: var(--menu-hover-background); color: var(--link-hover-color); }
+    .post-menu-content a,
+    .post-menu-content button,
+    .post-menu-label { display: block; width: 100%; padding: 3px 6px; border: 0; background: transparent; color: var(--text-color); font: inherit; text-align: left; white-space: nowrap; cursor: pointer }
+    .post-menu-content a:hover,
+    .post-menu-content button:hover,
+    .post-menu-label:hover { background: var(--menu-hover-background); color: var(--link-hover-color); }
     .post-menu-submenu { display: none; position: absolute; top: 44px; left: 100%; min-width: 87px; padding: 0; background: var(--menu-background); border: 1px solid var(--menu-border); }
     .post-menu-submenu.flip { left: auto; right: 100%; }
-    .post-menu-label:hover .post-menu-submenu, .post-menu-label:focus-within .post-menu-submenu { display: block; }
+    .post-menu-label:hover .post-menu-submenu,
+    .post-menu-label:focus-within .post-menu-submenu { display: block; }
     .post-menu-submenu a { padding: 3px 6px; }
 
     /* ===== Reportes (panel de administración) ===== */
@@ -1563,7 +1582,7 @@ function generateScript(): string {
         try {
             localStorage.setItem('tenma-hidden-posts', JSON.stringify(hidden));
         } catch (error) {}
-        tenmaApplyHiddenPosts();
+        window.location.reload();
     }
 
     function tenmaShowHiddenPost(postId) {
