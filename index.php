@@ -1053,6 +1053,18 @@ function formatBytes(int $bytes, int $precision = 2): string {
 }
 
 /**
+ * Genera los botones para insertar formatos en un comentario.
+ */
+function commentFormatToolbar(): string {
+    return '<div class="comment-format-toolbar" role="toolbar" aria-label="Formatos del comentario">'
+        . '<button type="button" class="comment-format-button" data-format-open="**" data-format-close="**"><strong>N</strong></button>'
+        . '<button type="button" class="comment-format-button" data-format-open="~" data-format-close="~"><em>C</em></button>'
+        . '<button type="button" class="comment-format-button" data-format-open="_" data-format-close="_"><u>S</u></button>'
+        . '<button type="button" class="comment-format-button" data-format-open="-" data-format-close="-"><s>T</s></button>'
+        . '</div>';
+}
+
+/**
  *  Aplica formato al texto de un comentario:
  *  >>citas, >greentext, <pinktext, **negrita**, ~cursiva~, _subrayado_, -tachado-
  */
@@ -1248,6 +1260,9 @@ function generateStyles(array $config): string {
     .post-form ::placeholder { opacity: 0 }
     .post-form-toggle { padding: 0; border: 0; background: none; color: #0000EE; font: inherit; font-weight: bold; cursor: pointer }
     .post-form-toggle:hover { color: var(--link-hover-color) }
+    .comment-format-toolbar { display: flex; flex-wrap: wrap; gap: 1px; margin-bottom: .5px }
+    .comment-format-button { padding: .1em .35em; cursor: pointer; font-size: .9em }
+    .comment-format-button:hover { color: var(--link-hover-color) }
 
     /* ===== Publicaciones ===== */
     .fileinfo  { font-size: .92rem; margin-bottom: 5px }
@@ -1436,6 +1451,23 @@ function generateScript(): string {
         toggle.setAttribute('aria-expanded', String(!isExpanded));
         formContainer.hidden = isExpanded;
         toggle.closest('h3').hidden = !isExpanded;
+    });
+
+    document.addEventListener('click', function(event) {
+        var button = event.target.closest('.comment-format-button');
+        if (!button) return;
+
+        var textarea = button.closest('td').querySelector('textarea[name="com"]');
+        if (!textarea) return;
+
+        var start = textarea.selectionStart;
+        var end = textarea.selectionEnd;
+        var selectedText = textarea.value.slice(start, end) || 'texto';
+        var open = button.getAttribute('data-format-open');
+        var close = button.getAttribute('data-format-close');
+        textarea.value = textarea.value.slice(0, start) + open + selectedText + close + textarea.value.slice(end);
+        textarea.focus();
+        textarea.setSelectionRange(start + open.length, start + open.length + selectedText.length);
     });
 
     function quotePost(num) {
@@ -2072,6 +2104,7 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
                 <b style="margin:.3em;">Comentario</b>
             </td>
             <td>
+                ' . commentFormatToolbar() . '
                 <textarea name="com" cols="48" rows="4" style="vertical-align:bottom" autocomplete="off" placeholder="Comentario" required></textarea>
             </td>
         </tr>
@@ -2166,6 +2199,7 @@ function generateThread(array $thread, array $allposts, array $config): string {
                     <b style="margin:.3em;">Comentario</b>
                 </td>
             <td>
+                ' . commentFormatToolbar() . '
                 <textarea name="com" cols="48" rows="4" style="vertical-align:bottom" autocomplete="off" placeholder="Comentario"></textarea>
             </td>
         </tr>
