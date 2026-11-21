@@ -5,6 +5,7 @@ Tenma es un tablón anónimo de discusión inspirado en los *imageboards*. La ap
 ## Funciones principales
 
 - Crear hilos con imagen y responder con texto, imagen o ambos.
+- Abrir las imágenes de las publicaciones en una ventana flotante que se puede mover y redimensionar sin alterar el diseño.
 - Citar publicaciones con `>>123`; mostrar enlaces de vuelta a las publicaciones que las citan.
 - Dar formato a comentarios: greentext (`>texto`), pinktext (`<texto`), negrita (`**texto**`), cursiva (`~texto~`) y subrayado (`_texto_`).
 - Mostrar actividad reciente, imágenes y estadísticas en la página principal.

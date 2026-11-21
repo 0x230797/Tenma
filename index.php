@@ -1687,7 +1687,7 @@ function renderImageBlock(array $post, bool $large, array $config): string {
         . e($imageName) . '</a> (' . e($size) . ($dimsText !== '' ? ', ' . e($dimsText) : '') . ')</div>';
 
     $image = '<div class="post-media">'
-        . '<a class="post-image-link" href="' . e($url) . '" aria-expanded="false">'
+        . '<a class="post-image-link" href="' . e($url) . '" aria-haspopup="dialog">'
         . '<img src="' . e($url) . '" style="' . e($maxCss) . '" alt="Imagen adjunta">'
         . '<span class="mobile-file-info mobile">' . e($size) . ' ' . e($extensionLabel) . '</span>'
         . '</a></div>';
@@ -2008,8 +2008,14 @@ function generateStyles(array $config): string {
     .quotelink { font-size: .92rem; }
     .post-media { float: left; margin: 0 15px 5px 0 }
     .post-media img { display: block; height: auto }
-    .post-image-link img { cursor: zoom-in }
-    .post-image-link img.is-expanded { max-width: 90vw !important; max-height: 90vh !important; cursor: zoom-out }
+    .post-image-link img, .post-video-link video { cursor: zoom-in }
+    .media-viewer-backdrop { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,.55) }
+    .media-viewer-window { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; min-width: 180px; min-height: 160px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: hidden; resize: both; border: 1px solid var(--border-color); background: var(--post-background); }
+    .media-viewer-titlebar { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; padding: 4px 6px 4px 10px; overflow: hidden; background: var(--section-color); color: var(--text-color); cursor: move; touch-action: none }
+    .media-viewer-title { overflow: hidden; font-size: .9rem; font-weight: bold; text-overflow: ellipsis; white-space: nowrap }
+    .media-viewer-close { flex: none; padding: 0 5px; border: 1px solid var(--border-color); background: var(--post-background); color: var(--text-color); font-size: 1.1rem; line-height: 1.2; cursor: pointer }
+    .media-viewer-content { display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; overflow: hidden; background: #111 }
+    .media-viewer-content img, .media-viewer-content video { display: block; width: 100%; height: 100%; object-fit: contain }
     .postheader { font-size: .92rem; display: contents }
     .postheader .subject { color: var(--post-subject-color); font-weight: bold }
     .postactions { font-size: .92rem }
@@ -2089,7 +2095,6 @@ function generateStyles(array $config): string {
     .rules-intro { margin: 10px auto; text-align: center }
     .rules-list { padding: 0 10px; list-style: none; }
     .rules-list li { margin-bottom: 10px; }
-    .rules-list h2 { font-size: 1rem; }
     .rules-list p { font-size: .92rem; line-height: 1.55 }
 
     /* ===== Panel de administración ===== */
@@ -2426,15 +2431,160 @@ function generateScript(): string {
             }
         });
 
-        // Ampliar/cerrar la vista previa de una imagen.
+        // Abrir los archivos multimedia en una ventana flotante y redimensionable.
+        function closeMediaViewer(backdrop, returnFocus) {
+            backdrop.remove();
+            if (returnFocus && returnFocus.focus) {
+                returnFocus.focus();
+            }
+        }
+
+        function openMediaViewer(media, returnFocus) {
+            var source = media.currentSrc || media.src;
+            if (!source && media.querySelector) {
+                var sourceElement = media.querySelector('source[src]');
+                source = sourceElement ? sourceElement.src : '';
+            }
+            if (!source) {
+                return;
+            }
+
+            var backdrop = document.createElement('div');
+            backdrop.className = 'media-viewer-backdrop';
+            var viewer = document.createElement('div');
+            viewer.className = 'media-viewer-window';
+            viewer.setAttribute('role', 'dialog');
+            viewer.setAttribute('aria-modal', 'true');
+            viewer.setAttribute('aria-label', 'Vista previa del archivo multimedia');
+
+            var titlebar = document.createElement('div');
+            titlebar.className = 'media-viewer-titlebar';
+            var title = document.createElement('span');
+            title.className = 'media-viewer-title';
+            title.textContent = source.split('/').pop().split('?')[0] || 'Vista previa';
+            var close = document.createElement('button');
+            close.className = 'media-viewer-close';
+            close.type = 'button';
+            close.setAttribute('aria-label', 'Cerrar vista previa');
+            close.textContent = '×';
+            titlebar.appendChild(title);
+            titlebar.appendChild(close);
+
+            var content = document.createElement('div');
+            content.className = 'media-viewer-content';
+            var preview;
+            if (media.tagName.toLowerCase() === 'video') {
+                preview = document.createElement('video');
+                preview.controls = true;
+                preview.src = source;
+            } else {
+                preview = document.createElement('img');
+                preview.src = source;
+                preview.alt = media.alt || 'Imagen adjunta';
+            }
+            content.appendChild(preview);
+
+            var resizeHandle = document.createElement('div');
+            resizeHandle.className = 'media-viewer-resize';
+            resizeHandle.setAttribute('role', 'button');
+            resizeHandle.setAttribute('tabindex', '0');
+            resizeHandle.setAttribute('aria-label', 'Redimensionar ventana');
+            viewer.appendChild(titlebar);
+            viewer.appendChild(content);
+            viewer.appendChild(resizeHandle);
+            backdrop.appendChild(viewer);
+            document.body.appendChild(backdrop);
+
+            viewer.style.width = Math.min(400, window.innerWidth - 24) + 'px';
+            viewer.style.height = Math.min(400, window.innerHeight - 24) + 'px';
+            close.focus();
+
+            close.addEventListener('click', function () {
+                closeMediaViewer(backdrop, returnFocus);
+            });
+            backdrop.addEventListener('keydown', function (event) {
+                if (event.key === 'Tab') {
+                    var focusable = viewer.querySelectorAll('button, [tabindex="0"], video[controls]');
+                    var first = focusable[0];
+                    var last = focusable[focusable.length - 1];
+                    if (event.shiftKey && document.activeElement === first) {
+                        event.preventDefault();
+                        last.focus();
+                    } else if (!event.shiftKey && document.activeElement === last) {
+                        event.preventDefault();
+                        first.focus();
+                    }
+                } else if (event.target === resizeHandle && (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+                    event.preventDefault();
+                    var width = viewer.getBoundingClientRect().width;
+                    var height = viewer.getBoundingClientRect().height;
+                    var change = event.shiftKey ? 40 : 10;
+                    if (event.key === 'ArrowUp') {
+                        height += change;
+                    } else if (event.key === 'ArrowDown') {
+                        height -= change;
+                    } else if (event.key === 'ArrowRight') {
+                        width += change;
+                    } else {
+                        width -= change;
+                    }
+                    viewer.style.width = Math.max(180, Math.min(width, window.innerWidth - 16)) + 'px';
+                    viewer.style.height = Math.max(160, Math.min(height, window.innerHeight - 16)) + 'px';
+                }
+            });
+
+            titlebar.addEventListener('pointerdown', function (event) {
+                if (event.target === close) {
+                    return;
+                }
+                var bounds = viewer.getBoundingClientRect();
+                var offsetX = event.clientX - bounds.left;
+                var offsetY = event.clientY - bounds.top;
+                titlebar.setPointerCapture(event.pointerId);
+                titlebar.onpointermove = function (moveEvent) {
+                    viewer.style.left = Math.max(0, Math.min(moveEvent.clientX - offsetX, window.innerWidth - viewer.offsetWidth)) + 'px';
+                    viewer.style.top = Math.max(0, Math.min(moveEvent.clientY - offsetY, window.innerHeight - viewer.offsetHeight)) + 'px';
+                    viewer.style.transform = 'none';
+                };
+                titlebar.onpointerup = titlebar.onpointercancel = function () {
+                    titlebar.onpointermove = null;
+                    titlebar.onpointerup = null;
+                    titlebar.onpointercancel = null;
+                };
+            });
+
+            resizeHandle.addEventListener('pointerdown', function (event) {
+                event.preventDefault();
+                var bounds = viewer.getBoundingClientRect();
+                var startX = event.clientX;
+                var startY = event.clientY;
+                var startWidth = bounds.width;
+                var startHeight = bounds.height;
+                viewer.style.left = bounds.left + 'px';
+                viewer.style.top = bounds.top + 'px';
+                viewer.style.transform = 'none';
+                resizeHandle.setPointerCapture(event.pointerId);
+                resizeHandle.onpointermove = function (moveEvent) {
+                    viewer.style.width = Math.max(180, Math.min(startWidth + moveEvent.clientX - startX, window.innerWidth - bounds.left - 8)) + 'px';
+                    viewer.style.height = Math.max(160, Math.min(startHeight + moveEvent.clientY - startY, window.innerHeight - bounds.top - 8)) + 'px';
+                };
+                resizeHandle.onpointerup = resizeHandle.onpointercancel = function () {
+                    resizeHandle.onpointermove = null;
+                    resizeHandle.onpointerup = null;
+                    resizeHandle.onpointercancel = null;
+                };
+            });
+        }
+
         document.addEventListener('click', function (event) {
             var image = event.target.closest && event.target.closest('.post-image-link img');
-            if (!image) {
+            var video = event.target.closest && event.target.closest('.post-video-link video');
+            var media = image || video;
+            if (!media) {
                 return;
             }
             event.preventDefault();
-            var expanded = image.classList.toggle('is-expanded');
-            image.closest('.post-image-link').setAttribute('aria-expanded', String(expanded));
+            openMediaViewer(media, media.closest('a') || media);
         });
 
         // Añadir la cita indicada en la URL (?quote=123).
@@ -2531,14 +2681,14 @@ function generateRules(array $config): string {
     $title = ($config['title'] ?: 'Tenma') . ' - Reglas';
     $items = '';
     foreach ($config['rules'] as $rule) {
-        $items .= '<li><h2>' . e((string)($rule['title'] ?? '')) . '</h2><p>'
+        $items .= '<li><h4>' . e((string)($rule['title'] ?? '')) . '</h4><p>'
             . e((string)($rule['desc'] ?? '')) . '</p></li>';
     }
 
     $content = '<center><h1 style="margin-bottom:5px;">' . e($title) . '</h1></center><hr>
 <div class="nav">[<a href="' . e(siteUrl('index.html')) . '">Inicio</a>]</div><hr>
 <div style="margin:1em 0;border:1px solid #800;background:#fff;">
-<h2 style="margin:0;padding:8px 12px;background:' . e((string)$config['section']) . ';font-size:1.15rem;">Reglas de convivencia</h2>
+<h3 style="padding:3px 10px;background:' . e((string)$config['section']) . '">Reglas de convivencia</h3>
 <p class="rules-intro">Para mantener un espacio útil y seguro, sigue estas reglas al publicar y participar.<br>El contenido puede ser retirado si las incumple.</p>
 <ol class="rules-list">' . $items . '</ol>
 </div>';
