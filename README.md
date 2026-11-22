@@ -8,7 +8,8 @@ Tenma es un tablón anónimo de discusión inspirado en los *imageboards*. La ap
 - Abrir las imágenes de las publicaciones en una ventana flotante que se puede mover y redimensionar sin alterar el diseño.
 - Citar publicaciones con `>>123`; mostrar enlaces de vuelta a las publicaciones que las citan.
 - Dar formato a comentarios: greentext (`>texto`), pinktext (`<texto`), negrita (`**texto**`), cursiva (`~texto~`) y subrayado (`_texto_`).
-- Mostrar actividad reciente, imágenes y estadísticas en la página principal.
+- Mostrar actividad reciente, un directorio de tablones, imágenes y estadísticas en la página principal.
+- Separar hilos y respuestas por tablón: General, Videojuegos, Anime y manga, Meta / soporte y NSFW (+18). Las publicaciones existentes se conservan en General al actualizar.
 - Usar el tablón desde escritorio o móvil, ocultar publicaciones localmente en el navegador y eliminar las propias.
 - Reportar contenido desde el menú de una publicación.
 - Administrar reportes, publicaciones, baneos, avisos, hilos fijados o bloqueados y el estado general de las publicaciones.
@@ -45,6 +46,7 @@ En una instalación nueva, el primer acceso prepara SQLite, crea carpetas y regl
 ## Configuración
 
 Los valores configurables están en el arreglo `$config` al inicio de `index.php`.
+Los tablones se definen en `$config['boards']` con un `slug`, un nombre y una descripción. Cada tablón tiene páginas y límites propios; las respuestas siempre permanecen en el tablón de su hilo. El aviso +18 de NSFW informa sobre el contenido, pero no verifica la edad del visitante.
 
 
 ## Vista previa

@@ -95,6 +95,21 @@ $config = [
     // Textos del tablón
     'defaultname'               => 'Anónimo',
     'deletionphrase'            => 'Eliminado',
+    'boards' => [
+        ['slug' => 't', 'name'  => 'Tetonas', 'description' => 'Contenido de tetonas', 'category' => 'GÉNEROS', 'adult' => true],
+        ['slug' => 'cn', 'name' => 'Culonas', 'description' => 'Contenido de culonas', 'category' => 'GÉNEROS', 'adult' => true],
+        ['slug' => 'c', 'name'  => 'Cosplay', 'description' => 'Cosplay para adultos', 'category' => 'GÉNEROS', 'adult' => true],
+        ['slug' => 'hc', 'name' => 'Hardcore/Fetiches', 'description' => 'Contenido hardcore y fetiches', 'category' => 'GÉNEROS', 'adult' => true],
+        ['slug' => 'i', 'name'  => 'Infidelidades', 'description' => 'Contenido sobre infidelidades', 'category' => 'GÉNEROS', 'adult' => true],
+        ['slug' => 'st', 'name' => 'Streamers/Youtubers', 'description' => 'Contenido de streamers y youtubers', 'category' => 'GÉNEROS', 'adult' => true],
+        ['slug' => 'tb', 'name' => 'Tributos', 'description' => 'Tributos para adultos', 'category' => 'GÉNEROS', 'adult' => true],
+        ['slug' => 'm', 'name'  => 'Maduras', 'description' => 'Contenido de maduras', 'category' => 'GÉNEROS', 'adult' => true],
+        ['slug' => 'r', 'name'  => 'Relatos Eróticos', 'description' => 'Relatos y historias eróticas', 'category' => 'GÉNEROS', 'adult' => true],
+        ['slug' => 'f', 'name'  => 'Fakes/IA', 'description' => 'Fakes e imágenes generadas con IA', 'category' => 'GÉNEROS', 'adult' => true],
+        ['slug' => 'h', 'name'  => 'Hentai', 'description' => 'Hentai y animación para adultos', 'category' => 'ANIMACIÓN', 'adult' => true],
+        ['slug' => 'o', 'name'  => 'Chicos', 'description' => 'Contenido masculino para adultos', 'category' => 'CHICOS', 'adult' => true],
+        ['slug' => 'tr', 'name' => 'Trans', 'description' => 'Contenido trans para adultos', 'category' => 'TRANS', 'adult' => true],
+    ],
     'rules' => [
         [
             'title' => 'Respeto y convivencia',
@@ -409,7 +424,7 @@ HTACCESS;
     return [
         $config['uploadfolder'] . '.htaccess' => <<<HTACCESS
 # Tenma - archivo generado automáticamente. No editar a mano.
-# Tenma-htaccess-version: 3
+# Tenma-htaccess-version: 4
 Options -ExecCGI -Indexes -Includes
 RemoveHandler .php .php3 .php4 .php5 .php7 .phtml .pl .py .cgi .sh .asp .aspx .shtml
 AddType text/plain .php .php3 .php4 .php5 .php7 .phtml .pl .py .cgi .sh .asp .aspx .shtml
@@ -430,14 +445,14 @@ HTACCESS,
 
         $config['databasefolder'] . '.htaccess' => <<<HTACCESS
 # Tenma - archivo generado automáticamente. No editar a mano.
-# Tenma-htaccess-version: 3
+# Tenma-htaccess-version: 4
 Options -Indexes
 {$denyAuthz}
 HTACCESS,
 
         $config['threaddir'] . '.htaccess' => <<<HTACCESS
 # Tenma - archivo generado automáticamente. No editar a mano.
-# Tenma-htaccess-version: 3
+# Tenma-htaccess-version: 4
 Options -Indexes
 
 <FilesMatch "\.(php\d?|phtml|pl|py|cgi|sh|asp|aspx|shtml|exe|db|sqlite3|sqlite|sql|secret|lock)$">
@@ -447,7 +462,7 @@ HTACCESS,
 
         '.htaccess' => <<<HTACCESS
 # Tenma - archivo generado automáticamente. No editar a mano.
-# Tenma-htaccess-version: 3
+# Tenma-htaccess-version: 4
 Options -Indexes
 
 ErrorDocument 404 {$errorDocumentUrl}
@@ -455,7 +470,7 @@ ErrorDocument 404 {$errorDocumentUrl}
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteCond %{REQUEST_FILENAME} -f
-    RewriteRule ^(index\.html|board(-[0-9]+)?\.html)$ index.php?static=$1 [L,QSA]
+    RewriteRule ^(index\.html|board(?:-[a-z0-9]+)?(?:-[0-9]+)?\.html)$ index.php?static=$1 [L,QSA]
     RewriteRule ^thread-([0-9]+)\.html$ threads/$1/ [L,R=301]
     RewriteRule ^threads/([0-9]+)/?$ index.php?staticthread=$1 [L,QSA]
     RewriteRule ^threads/([0-9]+)/(.*)$ index.php?staticthread=$1 [L,QSA]
@@ -489,7 +504,7 @@ function syncHtaccessFiles(array $config, string $errorDocumentUrl): void {
         $needsWrite = !is_file($path);
         if (!$needsWrite) {
             $existing = (string)@file_get_contents($path);
-            $needsWrite = strpos($existing, 'Tenma-htaccess-version: 3') === false;
+            $needsWrite = strpos($existing, 'Tenma-htaccess-version: 4') === false;
         }
         if ($needsWrite) {
             writeFileAtomic($path, $content);
@@ -598,6 +613,45 @@ function threadFilePath(int $num, array $config): string {
 
 function threadUrl(int $num): string {
     return siteUrl('threads/' . $num . '/');
+}
+
+/**
+ * Devuelve los tablones disponibles, indexados por su slug.
+ */
+function boardDefinitions(array $config): array {
+    $boards = [];
+    foreach (($config['boards'] ?? []) as $board) {
+        if (!is_array($board)
+            || !isset($board['slug'], $board['name'], $board['description'])
+            || !is_string($board['slug'])
+            || preg_match('/\A[a-z0-9]+\z/', $board['slug']) !== 1) {
+            continue;
+        }
+        $boards[$board['slug']] = $board;
+    }
+    return $boards;
+}
+
+/**
+ * Construye la URL de un tablón, conservando las rutas antiguas de General.
+ */
+function boardUrl(string $slug, int $page = 0): string {
+    $prefix = 'board-' . $slug;
+    return siteUrl($prefix . ($page > 0 ? '-' . $page : '') . '.html');
+}
+
+/**
+ * Navegación entre tablones para las páginas del índice y de los hilos.
+ */
+function boardNavigationHtml(array $config, string $currentSlug = ''): string {
+    $links = [];
+    $links[] = '<a href="' . e(siteUrl('overboard.html')) . '">/overboard/</a>';
+    foreach (boardDefinitions($config) as $slug => $board) {
+        $label = '/' . $slug . '/ ' . (string)$board['name'];
+        $current = $slug === $currentSlug ? ' aria-current="page"' : '';
+        $links[] = '<a href="' . e(boardUrl($slug)) . '"' . $current . '>' . e($label) . '</a>';
+    }
+    return '<div class="board-navigation">' . implode(' <span aria-hidden="true">·</span> ', $links) . '</div>';
 }
 
 /**
@@ -985,7 +1039,8 @@ function getPDO(array $config): PDO {
         filesize    INTEGER NOT NULL DEFAULT 0,
         locked      INTEGER NOT NULL DEFAULT 0,
         pinned      INTEGER NOT NULL DEFAULT 0,
-        author_admin INTEGER NOT NULL DEFAULT 0
+        author_admin INTEGER NOT NULL DEFAULT 0,
+        board       TEXT    NOT NULL DEFAULT 'hc'
     )");
 
     // Migraciones incrementales para instalaciones anteriores.
@@ -994,6 +1049,7 @@ function getPDO(array $config): PDO {
         'locked'       => 'ALTER TABLE posts ADD COLUMN locked INTEGER NOT NULL DEFAULT 0',
         'pinned'       => 'ALTER TABLE posts ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0',
         'author_admin' => 'ALTER TABLE posts ADD COLUMN author_admin INTEGER NOT NULL DEFAULT 0',
+        'board'        => "ALTER TABLE posts ADD COLUMN board TEXT NOT NULL DEFAULT 'hc'",
     ] as $column => $migration) {
         if (!in_array($column, $postColumns, true)) {
             $pdo->exec($migration);
@@ -1003,6 +1059,7 @@ function getPDO(array $config): PDO {
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_posts_parent ON posts(parent)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_posts_ip_time ON posts(postiphash, now)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_posts_visible ON posts(deleted, parent, now)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_posts_board_parent ON posts(board, parent)');
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS bans (
         hash       TEXT    PRIMARY KEY,
@@ -1130,8 +1187,8 @@ function getRepliesOf(array $config, int $parent): array {
 function insertPost(array $config, array $data): int {
     $pdo  = getPDO($config);
     $stmt = $pdo->prepare('INSERT INTO posts
-        (name, subject, comment, time, now, postiphash, deleted, image, parent, filesize, author_admin)
-        VALUES (:name, :subject, :comment, :time, :now, :postiphash, 0, :image, :parent, :filesize, :author_admin)');
+        (name, subject, comment, time, now, postiphash, deleted, image, parent, filesize, author_admin, board)
+        VALUES (:name, :subject, :comment, :time, :now, :postiphash, 0, :image, :parent, :filesize, :author_admin, :board)');
     $stmt->execute($data);
     return (int)$pdo->lastInsertId();
 }
@@ -1222,11 +1279,19 @@ function deleteThreadCompletely(array $config, int $threadnum): void {
  */
 function pruneOldThreads(array $config): void {
     $limit   = $config['postsperpage'] * $config['maxpages'];
-    $threads = getThreads(readPosts($config));
+    $posts   = readPosts($config);
 
-    while (count($threads) > $limit) {
-        $last = array_pop($threads);
-        deleteThreadCompletely($config, (int)$last['op']['num']);
+    foreach (boardDefinitions($config) as $slug => $board) {
+        $boardPosts = array_values(array_filter(
+            $posts,
+            fn(array $post): bool => (string)($post['board'] ?? 'hc') === $slug
+        ));
+        $threads = getThreads($boardPosts);
+
+        while (count($threads) > $limit) {
+            $last = array_pop($threads);
+            deleteThreadCompletely($config, (int)$last['op']['num']);
+        }
     }
 }
 
@@ -2035,6 +2100,20 @@ function generateStyles(array $config): string {
     .index-image-card img { display: block; max-width: 100%; max-height: 190px; width: auto; height: auto; border: 1px solid #800; object-fit: contain; }
     .index-image-caption { display: -webkit-box; max-width: 190px; margin-top: 5px; overflow: hidden; color: var(--text-color); font-size: .9rem; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 5; }
     .index-image-caption b { color: var(--post-subject-color); }
+    .index-boards-panel { margin: 1em 0; border: 1px solid var(--border-color); background: #fff; }
+    .index-section-title { padding: 3px 10px; margin: 0; background: var(--section-color); }
+    .index-boards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; padding: 0 15px 10px; }
+    .index-board-group { min-width: 0; }
+    .index-board-group h4 { padding: 10px 0 0; }
+    .index-genre-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
+    .index-board-other-groups { padding-left: 80px; }
+    .index-board-link { display: block; margin: 2px 0; line-height: 1.35; text-decoration: none; }
+    .index-board-slug { color: var(--muted-text-color); }
+    @media (max-width: 760px) { .index-boards { grid-template-columns: 1fr; gap: 18px; } .index-board-other-groups { padding-left: 0; } }
+    .overboard-board-label { margin: 8px 0 2px; color: var(--post-subject-color); font-weight: bold; }
+    .board-navigation { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 8px; margin: 8px 0; font-size: .9rem; }
+    .board-navigation a[aria-current="page"] { font-weight: bold; }
+    .board-age-warning { margin: 8px auto; padding: 7px 10px; border: 1px solid var(--post-subject-color); text-align: center; font-weight: bold; }
     .post-content { margin-top: 4px }
     .omitted { padding: 0 0 5px; font-size: .875rem }
     .hidden-post-placeholder { display: inline-block; padding: 4px 10px; margin: 4px 0; border: 1px dashed var(--border-color); background: var(--placeholder-background); color: var(--text-color); }
@@ -2753,6 +2832,33 @@ function generateIndex(array $allposts, array $config): string {
 <h3 style="margin:0 0 10px;padding:3px 10px;background:' . e((string)$config['section']) . ';">Última actividad</h3>
 <ul style="margin:0;padding:0 0 10px 10px;">' . $activityItems . '</ul></div>';
 
+    $boardGroups = [];
+    foreach (boardDefinitions($config) as $slug => $board) {
+        $category = (string)($board['category'] ?? 'OTROS');
+        $boardGroups[$category][] = '<a class="index-board-link" href="' . e(boardUrl($slug)) . '">'
+            . e((string)$board['name']) . ' <span class="index-board-slug">/' . e($slug) . '/</span></a>';
+    }
+
+    $genreBoards = $boardGroups['GÉNEROS'] ?? [];
+    $genreColumnSize = max(1, (int)ceil(count($genreBoards) / 2));
+    $genreColumns = '';
+    foreach (array_chunk($genreBoards, $genreColumnSize) as $column) {
+        $genreColumns .= '<div>' . implode('', $column) . '</div>';
+    }
+    $genres = '<div class="index-board-group"><h4>GÉNEROS</h4><div class="index-genre-columns">'
+        . $genreColumns . '</div></div>';
+    $rightGroups = '';
+    foreach (['ANIMACIÓN', 'CHICOS', 'TRANS'] as $category) {
+        if (!isset($boardGroups[$category])) {
+            continue;
+        }
+        $rightGroups .= '<div class="index-board-group"><h4>' . e($category) . '</h4>'
+            . implode('', $boardGroups[$category]) . '</div>';
+    }
+    $boardsHtml = '<section class="index-boards-panel" id="tablones">'
+        . '<h3 class="index-section-title">Tablones</h3><div class="index-boards">'
+        . $genres . '<div class="index-board-other-groups">' . $rightGroups . '</div></div></section>';
+
     $images = array_slice(array_reverse(array_values(array_filter(
         $allposts,
         fn(array $post): bool => !empty($post['image'])
@@ -2802,8 +2908,8 @@ function generateIndex(array $allposts, array $config): string {
 </div></div>';
 
     $content = '<center style="margin-bottom:5px;"><h1>' . e($title) . '</h1></center><hr>
-<div class="nav">[<a href="' . e(siteUrl('board.html')) . '">Tablón</a>] [<a href="' . e(siteUrl($config['rulesfile'])) . '">Reglas</a>] [<a href="' . e(siteUrl($config['helpfile'])) . '">Ayuda</a>]</div><hr>
-' . $activity . $gallery . $stats . '
+<div class="nav">[<a href="' . e(siteUrl('overboard.html')) . '">Overboard</a>] [<a href="' . e(siteUrl($config['rulesfile'])) . '">Reglas</a>] [<a href="' . e(siteUrl($config['helpfile'])) . '">Ayuda</a>]</div><hr>
+' . $activity . $boardsHtml . $gallery . $stats . '
 <hr><div class="nav" style="float:right;">[<a href="' . e(siteUrl($config['tenmafile'])) . '?mode=manage">Admin</a>]</div>
 <br clear="all">';
 
@@ -2813,9 +2919,24 @@ function generateIndex(array $allposts, array $config): string {
 /**
  * Genera una página del tablón con los hilos recientes y el formulario.
  */
-function generateBoard(array $threads, int $pagenumber, int $totalpages, array $allposts, array $config): string {
-    $title     = ($config['title'] ?: 'Tenma') . ' - Tablón';
-    $subtitle  = (string)$config['subtitle'];
+function generateBoard(
+    array $threads,
+    int $pagenumber,
+    int $totalpages,
+    array $allposts,
+    array $config,
+    string $boardSlug = 'hc'
+): string {
+    $boards = boardDefinitions($config);
+    if (!isset($boards[$boardSlug])) {
+        throw new RuntimeException('El tablón solicitado no está configurado.');
+    }
+    $board     = $boards[$boardSlug];
+    $title     = ($config['title'] ?: 'Tenma') . ' - ' . (string)$board['name'];
+    $subtitle  = (string)$board['description'];
+    $adultWarning = !empty($board['adult'])
+        ? '<p class="board-age-warning">Tablón para mayores de 18 años. Puede contener material para adultos.</p>'
+        : '';
     $notice    = '<hr>';
     $noticeRaw = getSiteSetting($config, 'notice_message');
 
@@ -2834,6 +2955,7 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
 <div id="new-thread-form" hidden>
 <br>
 <form class="post-form" method="POST" action="' . e(siteUrl($config['tenmafile'])) . '" enctype="multipart/form-data">
+<input type="hidden" name="board" value="' . e($boardSlug) . '">
 <table class="post-form-table" style="margin:0 auto;border-spacing:1px;">
     <tbody>
         <tr>
@@ -2908,12 +3030,14 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
         $postHtml = substr($postHtml, 0, -strlen($lastSeparator)) . $deleteButton . $lastSeparator;
     }
 
-    $pageHtml = paginationHtml($pagenumber, $totalpages, 'board', $config);
+    $boardPrefix = 'board-' . $boardSlug;
+    $pageHtml = paginationHtml($pagenumber, $totalpages, $boardPrefix, $config);
 
     $content = '<div class="board-column"><center style="margin-bottom:5px"><h1>' . e($title) . '</h1><h3>' . e($subtitle) . '</h3></center><hr>
-<div class="nav">[<a href="' . e(siteUrl('index.html')) . '">Inicio</a>]</div><hr>
-' . $formHtml . $notice . '<form method="POST" action="' . e(siteUrl($config['tenmafile'])) . '" data-confirm="¿Deseas eliminar las publicaciones seleccionadas?">'
-        . '<input type="hidden" name="return_to" value="' . e(siteUrl('board.html')) . '">'
+<div class="nav">[<a href="' . e(siteUrl('index.html')) . '">Inicio</a>] [<a href="' . e(siteUrl('index.html#tablones')) . '">Tablones</a>]</div>'
+        . boardNavigationHtml($config, $boardSlug) . '<hr>
+' . $adultWarning . $formHtml . $notice . '<form method="POST" action="' . e(siteUrl($config['tenmafile'])) . '" data-confirm="¿Deseas eliminar las publicaciones seleccionadas?">'
+        . '<input type="hidden" name="return_to" value="' . e(boardUrl($boardSlug, $pagenumber)) . '">'
         . $postHtml . $pageHtml . '</form></div>';
 
     return renderPage($title, $content, $config);
@@ -2925,7 +3049,10 @@ function generateBoard(array $threads, int $pagenumber, int $totalpages, array $
 function generateThread(array $thread, array $allposts, array $config): string {
     $op        = $thread['op'];
     $threadnum = (int)$op['num'];
-    $title     = ($config['title'] ?: 'Tenma') . ' - Publicación #' . $threadnum;
+    $boardSlug = (string)($op['board'] ?? 'hc');
+    $boards    = boardDefinitions($config);
+    $board     = $boards[$boardSlug] ?? reset($boards);
+    $title     = ($config['title'] ?: 'Tenma') . ' - ' . (string)$board['name'] . ' #' . $threadnum;
 
     $postHtml = renderOP($op, $allposts, true, false, $config);
     foreach ($thread['replies'] as $reply) {
@@ -2978,8 +3105,8 @@ function generateThread(array $thread, array $allposts, array $config): string {
 
     $content = '<div class="board-column"><center><h1 style="margin-bottom:5px;">' . e($title) . '</h1></center>
 <hr>
-<div class="nav">[<a href="' . e(siteUrl('index.html')) . '">Inicio</a>] [<a href="' . e(siteUrl('board.html')) . '">Tablón</a>]</div>
-<hr>
+<div class="nav">[<a href="' . e(siteUrl('index.html')) . '">Inicio</a>] [<a href="' . e(siteUrl('index.html#tablones')) . '">Tablones</a>] [<a href="' . e(boardUrl($boardSlug)) . '">/' . e($boardSlug) . '/ ' . e((string)$board['name']) . '</a>]</div>'
+        . boardNavigationHtml($config, $boardSlug) . '<hr>
 ' . $replySection . '<hr>
 <form method="POST" action="' . e(siteUrl($config['tenmafile'])) . '" data-confirm="¿Deseas eliminar las publicaciones seleccionadas?">'
         . '<input type="hidden" name="return_to" value="' . e(threadUrl($threadnum)) . '">'
@@ -3020,7 +3147,13 @@ function generateSitemap(array $threads, array $config): string {
         'UTF-8'
     );
 
-    $urls = ['index.html', 'board.html', $config['rulesfile'], $config['helpfile']];
+    $urls = ['index.html', 'overboard.html', $config['rulesfile'], $config['helpfile']];
+    for ($page = 1; $page < 10; $page++) {
+        $urls[] = 'overboard-' . $page . '.html';
+    }
+    foreach (boardDefinitions($config) as $slug => $board) {
+        $urls[] = basename(boardUrl($slug));
+    }
     $xml  = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'];
 
     foreach ($urls as $page) {
@@ -3040,8 +3173,8 @@ function generateSitemap(array $threads, array $config): string {
 function paginationHtml(int $current, int $total, string $base, array $config, string $extraQuery = ''): string {
     $query = $extraQuery !== '' ? '&' . $extraQuery : '';
 
-    if ($base === 'board') {
-        $href = fn(int $index): string => $index === 0 ? siteUrl('board.html') : siteUrl('board-' . $index . '.html');
+    if ($base !== 'manage') {
+        $href = fn(int $index): string => siteUrl($base . ($index > 0 ? '-' . $index : '') . '.html');
     } else {
         $href = fn(int $index): string => siteUrl($config['tenmafile']) . '?mode=manage&page=' . $index . $query;
     }
@@ -3057,6 +3190,41 @@ function paginationHtml(int $current, int $total, string $base, array $config, s
 
     return '<table align="center" style="border-collapse:collapse;margin:10px 0;background-color:#F0E0D6"><tbody><tr>'
         . $numbers . '</tr></tbody></table>';
+}
+
+/**
+ * Genera el Overboard con hilos recientes de todos los tablones.
+ */
+function generateOverboard(array $threads, int $pagenumber, int $totalpages, array $allposts, array $config): string {
+    $title = ($config['title'] ?: 'Tenma') . ' - Overboard';
+
+    $postHtml = '';
+    foreach ($threads as $thread) {
+        $op = $thread['op'];
+        $boardSlug = (string)($op['board'] ?? 'hc');
+        $boardName = boardDefinitions($config)[$boardSlug]['name'] ?? $boardSlug;
+
+        $postHtml .= '<div class="overboard-board-label">/' . e($boardSlug) . '/ ' . e((string)$boardName) . '</div>';
+        $postHtml .= renderOP($op, $allposts, false, true, $config);
+
+        $replies = $thread['replies'];
+        $displayReplies = count($replies) > $config['maxreplieshown']
+            ? array_slice($replies, -$config['maxreplieshown'])
+            : $replies;
+
+        foreach ($displayReplies as $reply) {
+            $postHtml .= renderReply($reply, $allposts, true, $config);
+        }
+        $postHtml .= '<hr style="clear:both;">';
+    }
+
+    $pageHtml = paginationHtml($pagenumber, $totalpages, 'overboard', $config);
+    $content = '<div class="board-column"><center style="margin-bottom:5px"><h1>Overboard</h1><h3>Últimos 100 hilos de todos los tablones</h3></center><hr>'
+        . '<div class="nav">[<a href="' . e(siteUrl('index.html')) . '">Inicio</a>] [<a href="' . e(siteUrl('index.html#tablones')) . '">Tablones</a>]</div>'
+        . boardNavigationHtml($config) . '<hr>' . $postHtml . $pageHtml
+        . '</div>';
+
+    return renderPage($title, $content, $config);
 }
 
 /**
@@ -3077,10 +3245,49 @@ function buildPages(array $posts, array $config): void {
     try {
         ensureDir($config['threaddir'], 0755);
 
-        $threadList = getThreads($posts);
-        $threadList = array_slice($threadList, 0, $config['postsperpage'] * $config['maxpages']);
-        $totalPages = max(1, (int)ceil(count($threadList) / $config['postsperpage']));
-        $pages      = array_chunk($threadList, $config['postsperpage']) ?: [[]];
+        $allThreadList = [];
+        $generatedBoardPages = [];
+        foreach (boardDefinitions($config) as $slug => $board) {
+            $boardPosts = array_values(array_filter(
+                $posts,
+                fn(array $post): bool => (string)($post['board'] ?? 'hc') === $slug
+            ));
+            $threadList = array_slice(
+                getThreads($boardPosts),
+                0,
+                $config['postsperpage'] * $config['maxpages']
+            );
+            $allThreadList = array_merge($allThreadList, $threadList);
+            $totalPages = max(1, (int)ceil(count($threadList) / $config['postsperpage']));
+            $pages = array_chunk($threadList, $config['postsperpage']) ?: [[]];
+            $boardPrefix = 'board-' . $slug;
+
+            foreach ($pages as $index => $pageThreads) {
+                $filename = $boardPrefix . ($index > 0 ? '-' . $index : '') . '.html';
+                $generatedBoardPages[$filename] = true;
+                writeFileAtomic(
+                    $filename,
+                    generateBoard($pageThreads, $index, $totalPages, $posts, $config, $slug)
+                );
+            }
+        }
+
+        $overboardThreads = array_slice(getThreads($posts), 0, 100);
+        $overboardPages = array_chunk($overboardThreads, 10) ?: [[]];
+        $overboardTotalPages = count($overboardPages);
+        foreach ($overboardPages as $index => $pageThreads) {
+            $filename = 'overboard' . ($index > 0 ? '-' . $index : '') . '.html';
+            writeFileAtomic(
+                $filename,
+                generateOverboard($pageThreads, $index, $overboardTotalPages, $posts, $config)
+            );
+        }
+        for ($index = $overboardTotalPages; $index < 10; $index++) {
+            $obsoletePage = 'overboard-' . $index . '.html';
+            if (is_file($obsoletePage)) {
+                @unlink($obsoletePage);
+            }
+        }
 
         // Elimina el HTML de hilos eliminados.
         foreach ($posts as $post) {
@@ -3101,22 +3308,17 @@ function buildPages(array $posts, array $config): void {
         writeFileAtomic($config['errorfile'], generateErrorPage($config));
         writeFileAtomic('favicon.ico', generateFavicon());
         writeFileAtomic('robots.txt', generateRobots($config));
-        writeFileAtomic('sitemap.xml', generateSitemap($threadList, $config));
+        writeFileAtomic('sitemap.xml', generateSitemap($allThreadList, $config));
         writeFileAtomic('style.css', generateStyles($config));
         writeFileAtomic('tenma.js', generateScript());
 
-        foreach ($pages as $index => $pageThreads) {
-            $filename = $index === 0 ? 'board.html' : 'board-' . $index . '.html';
-            writeFileAtomic($filename, generateBoard($pageThreads, $index, $totalPages, $posts, $config));
-        }
-
-        foreach ($threadList as $thread) {
+        foreach ($allThreadList as $thread) {
             writeFileAtomic(threadFilePath((int)$thread['op']['num'], $config), generateThread($thread, $posts, $config));
         }
 
         foreach (glob('board-*.html') ?: [] as $file) {
-            $index = (int)str_replace(['board-', '.html'], '', $file);
-            if ($index >= $totalPages) {
+            if (preg_match('/\Aboard-[a-z0-9]+(?:-[0-9]+)?\.html\z/', $file) === 1
+                && !isset($generatedBoardPages[$file])) {
                 @unlink($file);
             }
         }
@@ -3240,7 +3442,7 @@ function storeUploadedImage(array $config, array $file): array {
  */
 function handleStaticRequest(array $config): void {
     $staticPage = inputString($_GET, 'static');
-    if ($staticPage === '' || preg_match('/\A(?:index\.html|board(?:-[0-9]+)?\.html)\z/', $staticPage) !== 1) {
+    if ($staticPage === '' || preg_match('/\A(?:index\.html|overboard(?:-[0-9]+)?\.html|board(?:-[a-z0-9]+)?(?:-[0-9]+)?\.html)\z/', $staticPage) !== 1) {
         return;
     }
 
@@ -3966,6 +4168,16 @@ function handlePublishRequest(array $config, string $hashedip, string $legacyhas
         if (!empty($parentThread['locked'])) {
             showError($config, 'Este hilo está bloqueado y no admite nuevas respuestas.', 403);
         }
+        $boardSlug = (string)($parentThread['board'] ?? 'hc');
+    } else {
+        if (isset($_POST['board']) && !is_string($_POST['board'])) {
+            showError($config, 'El tablón seleccionado no es válido.');
+        }
+        $boardSlug = inputString($_POST, 'board', 'hc');
+    }
+
+    if (!isset(boardDefinitions($config)[$boardSlug])) {
+        showError($config, 'El tablón seleccionado no existe.', 404);
     }
 
     if (!mb_check_encoding($name . $subject . $comment, 'UTF-8')) {
@@ -4074,6 +4286,7 @@ function handlePublishRequest(array $config, string $hashedip, string $legacyhas
             'parent'       => $parent,
             'filesize'     => $fileSize,
             'author_admin' => $isAdminPost ? 1 : 0,
+            'board'        => $boardSlug,
         ]);
     } catch (Throwable $insertError) {
         if ($imageFile !== '') {
@@ -4090,7 +4303,7 @@ function handlePublishRequest(array $config, string $hashedip, string $legacyhas
 
     $location = $parent > 0
         ? threadUrl($parent) . '#p' . $num
-        : siteUrl('board.html');
+        : boardUrl($boardSlug);
 
     header('Location: ' . $location, true, 303);
     exit;
